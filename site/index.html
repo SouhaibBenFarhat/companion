@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="icon.png" type="image/png" />
-  <title>Companion — a chat panel that never appears in screen share</title>
-  <meta name="description" content="Companion is a native macOS panel you can ask questions while you present or pair. Screen capture skips it, so the shared view stays clean. Free, open source, installable with Homebrew." />
+  <title>Companion — a pair programming assistant for macOS</title>
+  <meta name="description" content="Companion is a native macOS panel you summon with a shortcut to ask about the code you're pairing on. It reads your repo, never steals focus, and stays out of the shared view. Free, open source, installable with Homebrew." />
   <link rel="canonical" href="https://souhaibbenfarhat.github.io/companion/" />
   <meta name="author" content="Souhaib Ben Farhat" />
 
-  <meta property="og:title" content="Companion — a chat panel that never appears in screen share" />
-  <meta property="og:description" content="Ask questions while you present or pair. The panel stays on your display and never reaches the shared stream, so the people watching see only your work." />
+  <meta property="og:title" content="Companion — a pair programming assistant for macOS" />
+  <meta property="og:description" content="Ask about the code you and your pair are working through, in a panel that sits beside your editor instead of on top of the conversation." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://souhaibbenfarhat.github.io/companion/" />
   <meta property="og:image" content="https://souhaibbenfarhat.github.io/companion/og.png" />
@@ -119,6 +119,9 @@
     .req { margin-top: 0.9rem; font-size: 0.8rem; color: var(--muted); }
 
     section { padding: 4rem 0; border-top: 1px solid var(--line); }
+    section.shot { padding: 0 0 4rem; border-top: 0; }
+    section.shot img { display: block; width: 100%; height: auto; }
+    .panel-shot { display: block; width: 100%; max-width: 26rem; margin: 2.5rem 0 0; height: auto; }
     section h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin: 0.6rem 0 0; }
     section .lead { max-width: 40rem; margin: 0.9rem 0 0; color: var(--muted); line-height: 1.7; }
 
@@ -158,11 +161,10 @@
 
   <header class="wrap hero">
     <img class="icon" src="icon.png" alt="Companion app icon" />
-    <h1 class="display">A chat panel that never<br />appears in screen share</h1>
+    <h1 class="display">A pair programming<br />assistant for macOS</h1>
     <p class="tagline">
-      Ask questions while you present or pair. Companion stays on your display and
-      never reaches the shared stream, so the people watching see your work and
-      nothing else.
+      Ask about the code you and your pair are working through, in a panel that
+      sits beside your editor instead of on top of the conversation.
     </p>
 
     <button class="brew" id="brew" title="Click to copy">
@@ -172,31 +174,42 @@
     <p class="req">macOS 14 or later · Apple Silicon · free and open source</p>
   </header>
 
+  <section class="shot">
+    <div class="wrap">
+      <img src="mock-desk.svg" alt="Companion open beside an editor and a video call during a pairing session on a MacBook" />
+    </div>
+  </section>
+
   <section>
     <div class="wrap">
       <p class="label">Why</p>
-      <h2 class="display">A clean screen is easier to follow</h2>
+      <h2 class="display">Pairing is one screen and two people</h2>
       <p class="lead">
-        When you share your screen, everything on it goes out — helper windows
-        included. Companion sets <code>NSWindowSharingNone</code>, so screen
-        capture skips it entirely. Your notes stay yours, and the view your
-        colleagues are trying to follow stays uncluttered.
+        The moment you go looking something up — a browser tab, a chat window, a
+        second editor — the code your pair was following slides off screen and
+        you both lose the thread. Companion answers next to the code instead:
+        summon it with a shortcut, ask, dismiss.
       </p>
 
       <div class="grid">
         <div class="card">
-          <h3>Invisible to capture</h3>
-          <p>Meet, Teams, Zoom and Slack all capture through the same macOS APIs. All of them skip this window — including cloud recordings, which record the same shared stream.</p>
-        </div>
-        <div class="card">
           <h3>Never steals focus</h3>
-          <p>A non-activating panel that still takes keystrokes. The app you were presenting stays frontmost, and the call app sees no window switch.</p>
+          <p>The panel takes your typing while your editor stays the active app. Your cursor doesn't jump, and the call app sees no window switch.</p>
         </div>
         <div class="card">
           <h3>Knows your repo</h3>
-          <p>Point it at the project you are pairing on. It reads the real files from disk — not pixels, not a screenshot — so answers are about your actual code.</p>
+          <p>Not a screenshot, not the visible 40 lines — the real files on disk, plus the diff of what you have changed this session.</p>
+        </div>
+        <div class="card">
+          <h3>Read only by default</h3>
+          <p>An assistant should not edit the code you are demonstrating to someone. Editing stays off until you turn it on.</p>
         </div>
       </div>
+
+      <p class="lead" style="margin-top:1.75rem">
+        It also stays out of the shared view — macOS screen capture skips the
+        window, so opening it does not change what your pair sees.
+      </p>
     </div>
   </section>
 
@@ -257,6 +270,8 @@
         You type rather than talk, on purpose — your microphone is live in the
         call, so speaking to an assistant means everyone hears you doing it.
       </p>
+
+      <img class="panel-shot" src="mock-panel.svg" alt="The Companion panel: a question, an answer with a code block, and the input box" />
     </div>
   </section>
 
