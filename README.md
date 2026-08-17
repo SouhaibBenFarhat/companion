@@ -49,8 +49,9 @@ npm install -g @openai/codex
 | Shortcut | Action |
 | --- | --- |
 | <kbd>⌥</kbd><kbd>Space</kbd> | Show / hide the panel |
+| <kbd>↩</kbd> | Send |
+| <kbd>⇧</kbd><kbd>↩</kbd> | New line |
 | <kbd>Esc</kbd> | Hide the panel |
-| <kbd>⌘</kbd><kbd>↩</kbd> | Send |
 
 The panel takes keyboard focus without bringing Companion to the front, so the
 app you were presenting stays active and the call app sees no window switch.
