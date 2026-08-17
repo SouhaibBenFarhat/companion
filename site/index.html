@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="icon.png" type="image/png" />
+  <title>Companion — a chat panel that never appears in screen share</title>
+  <meta name="description" content="Companion is a native macOS panel you can ask questions while you present or pair. Screen capture skips it, so the shared view stays clean. Free, open source, installable with Homebrew." />
+  <link rel="canonical" href="https://souhaibbenfarhat.github.io/companion/" />
+  <meta name="author" content="Souhaib Ben Farhat" />
+
+  <meta property="og:title" content="Companion — a chat panel that never appears in screen share" />
+  <meta property="og:description" content="Ask questions while you present or pair. The panel stays on your display and never reaches the shared stream, so the people watching see only your work." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://souhaibbenfarhat.github.io/companion/" />
+  <meta property="og:image" content="https://souhaibbenfarhat.github.io/companion/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Companion — an open C mark with a dot in its gap, on a near-black card." />
+  <meta property="og:site_name" content="Companion" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://souhaibbenfarhat.github.io/companion/og.png" />
+
+  <meta name="theme-color" content="#f8f8fb" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0f1015" media="(prefers-color-scheme: dark)" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg: #f8f8fb;
+      --surface: #ffffff;
+      --text: #16181d;
+      --muted: #5b616d;
+      --line: #e6e5ee;
+      --is: #5a50e8;
+      --code-bg: rgba(22, 24, 29, 0.05);
+      --shadow-sm: 0 1px 2px rgba(22,24,29,.04), 0 1px 3px rgba(22,24,29,.06);
+      --shadow-md: 0 2px 4px rgba(22,24,29,.05), 0 6px 16px rgba(22,24,29,.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1015;
+        --surface: #16171e;
+        --text: #e8e9ec;
+        --muted: #99a0ac;
+        --line: #242630;
+        --is: #8f88ff;
+        --code-bg: rgba(232, 233, 236, 0.07);
+        --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+        --shadow-md: 0 4px 14px rgba(0,0,0,.5);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    body { margin: 0; min-height: 100vh; }
+    a { color: inherit; text-decoration: none; }
+    ::selection { background: var(--is); color: #fff; }
+    :where(a, button):focus-visible { outline: 2px solid var(--is); outline-offset: 2px; border-radius: 6px; }
+
+    .wrap { margin: 0 auto; width: 100%; max-width: 68rem; padding: 0 1.5rem; }
+    .display { font-family: 'Fraunces', ui-serif, Georgia, serif; letter-spacing: -0.02em; font-weight: 500; }
+    .muted { color: var(--muted); }
+    .label {
+      font-size: 0.7rem; font-weight: 500; text-transform: uppercase;
+      letter-spacing: 0.18em; color: var(--muted); margin: 0;
+    }
+    code {
+      background: var(--code-bg); border-radius: 6px; padding: 0.1em 0.4em;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.85em;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 1rem; box-shadow: var(--shadow-sm);
+    }
+    .link-underline {
+      color: var(--is);
+      background-image: linear-gradient(var(--is), var(--is));
+      background-size: 0% 1px; background-position: 0 100%; background-repeat: no-repeat;
+      transition: background-size 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .link-underline:hover { background-size: 100% 1px; }
+
+    .top { border-bottom: 1px solid var(--line); }
+    .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 3.5rem; }
+    .top .brand { display: flex; align-items: center; gap: 0.55rem; font-weight: 500; }
+    .top .brand img { width: 1.35rem; height: 1.35rem; border-radius: 0.35rem; }
+    .top a.nav { font-size: 0.875rem; color: var(--muted); transition: color 0.2s; }
+    .top a.nav:hover { color: var(--text); }
+
+    .hero { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 5rem 0 4rem; }
+    .hero img.icon { width: 7rem; height: 7rem; border-radius: 1.6rem; }
+    .hero h1 { font-size: clamp(2.25rem, 5.5vw, 3.25rem); margin: 1.75rem 0 0; line-height: 1.1; }
+    .hero .tagline { max-width: 36rem; font-size: 1.125rem; line-height: 1.65; margin: 1rem 0 0; color: var(--muted); }
+
+    .brew {
+      display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+      width: 100%; max-width: 30rem; margin-top: 2rem; padding: 0.8rem 1rem;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 0.75rem;
+      box-shadow: var(--shadow-sm); cursor: pointer; text-align: left;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.8rem; color: var(--text);
+      transition: box-shadow 0.2s;
+    }
+    .brew:hover { box-shadow: var(--shadow-md); }
+    .brew .c { color: var(--muted); }
+    .brew .copy {
+      flex-shrink: 0; font-family: 'Inter', sans-serif; font-size: 0.7rem; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted);
+    }
+    .req { margin-top: 0.9rem; font-size: 0.8rem; color: var(--muted); }
+
+    section { padding: 4rem 0; border-top: 1px solid var(--line); }
+    section h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin: 0.6rem 0 0; }
+    section .lead { max-width: 40rem; margin: 0.9rem 0 0; color: var(--muted); line-height: 1.7; }
+
+    .grid { display: grid; gap: 1rem; margin-top: 2.5rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+    .grid .card { padding: 1.4rem; }
+    .grid h3 { font-size: 0.95rem; margin: 0 0 0.5rem; font-weight: 600; }
+    .grid p { margin: 0; font-size: 0.9rem; line-height: 1.65; color: var(--muted); }
+
+    .steps { counter-reset: step; margin-top: 2.5rem; display: grid; gap: 1rem; }
+    .steps .card { padding: 1.3rem 1.4rem; display: flex; gap: 1rem; align-items: flex-start; }
+    .steps .n {
+      flex-shrink: 0; width: 1.6rem; height: 1.6rem; border-radius: 0.5rem;
+      display: grid; place-items: center; background: var(--is); color: #fff;
+      font-size: 0.78rem; font-weight: 600;
+    }
+    .steps h3 { margin: 0 0 0.35rem; font-size: 0.95rem; font-weight: 600; }
+    .steps p { margin: 0; font-size: 0.9rem; line-height: 1.65; color: var(--muted); }
+
+    .keys { margin-top: 2rem; border-collapse: collapse; width: 100%; max-width: 30rem; font-size: 0.9rem; }
+    .keys td { padding: 0.55rem 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+    .keys td:first-child { width: 9rem; color: var(--text); font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.82rem; }
+
+    footer { border-top: 1px solid var(--line); padding: 2.5rem 0 3.5rem; }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; font-size: 0.85rem; color: var(--muted); }
+    footer a { transition: color 0.2s; }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+  <div class="top">
+    <div class="wrap">
+      <span class="brand"><img src="icon.png" alt="" /> Companion</span>
+      <a class="nav" href="https://github.com/SouhaibBenFarhat/companion">GitHub</a>
+    </div>
+  </div>
+
+  <header class="wrap hero">
+    <img class="icon" src="icon.png" alt="Companion app icon" />
+    <h1 class="display">A chat panel that never<br />appears in screen share</h1>
+    <p class="tagline">
+      Ask questions while you present or pair. Companion stays on your display and
+      never reaches the shared stream, so the people watching see your work and
+      nothing else.
+    </p>
+
+    <button class="brew" id="brew" title="Click to copy">
+      <span><span class="c">$</span> brew install --cask souhaibbenfarhat/tap/companion</span>
+      <span class="copy" id="brewLabel">Copy</span>
+    </button>
+    <p class="req">macOS 14 or later · Apple Silicon · free and open source</p>
+  </header>
+
+  <section>
+    <div class="wrap">
+      <p class="label">Why</p>
+      <h2 class="display">A clean screen is easier to follow</h2>
+      <p class="lead">
+        When you share your screen, everything on it goes out — helper windows
+        included. Companion sets <code>NSWindowSharingNone</code>, so screen
+        capture skips it entirely. Your notes stay yours, and the view your
+        colleagues are trying to follow stays uncluttered.
+      </p>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Invisible to capture</h3>
+          <p>Meet, Teams, Zoom and Slack all capture through the same macOS APIs. All of them skip this window — including cloud recordings, which record the same shared stream.</p>
+        </div>
+        <div class="card">
+          <h3>Never steals focus</h3>
+          <p>A non-activating panel that still takes keystrokes. The app you were presenting stays frontmost, and the call app sees no window switch.</p>
+        </div>
+        <div class="card">
+          <h3>Knows your repo</h3>
+          <p>Point it at the project you are pairing on. It reads the real files from disk — not pixels, not a screenshot — so answers are about your actual code.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="label">How it works</p>
+      <h2 class="display">No API key. Nothing to store.</h2>
+      <p class="lead">
+        Companion does not call a model itself. It drives a coding agent you
+        already have installed, running headless in your repo — which means the
+        hard parts are already solved.
+      </p>
+
+      <div class="steps">
+        <div class="card">
+          <span class="n">1</span>
+          <div>
+            <h3>Your subscription, not a key</h3>
+            <p>Claude Code or Codex already holds your login. Companion spawns the CLI and reads its output, so there is no key in the app, nothing to leak, and no per-token bill.</p>
+          </div>
+        </div>
+        <div class="card">
+          <span class="n">2</span>
+          <div>
+            <h3>Context handled for you</h3>
+            <p>Deciding what to read and when to compact a long thread is the hardest part of building this kind of tool. The agent already does it.</p>
+          </div>
+        </div>
+        <div class="card">
+          <span class="n">3</span>
+          <div>
+            <h3>Follow-ups keep the thread</h3>
+            <p>Each conversation remembers the agent's session, so "no, do it the other way" reaches an agent that still knows what it read.</p>
+          </div>
+        </div>
+        <div class="card">
+          <span class="n">4</span>
+          <div>
+            <h3>Read only by default</h3>
+            <p>An assistant should not edit the code you are demonstrating to someone. Editing is off until you turn it on.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="label">Using it</p>
+      <h2 class="display">One shortcut, then type</h2>
+      <table class="keys">
+        <tr><td>⌥ Space</td><td>Show or hide the panel</td></tr>
+        <tr><td>Enter</td><td>Send</td></tr>
+        <tr><td>⇧ Enter</td><td>New line</td></tr>
+        <tr><td>Esc</td><td>Hide</td></tr>
+      </table>
+      <p class="lead" style="margin-top:1.75rem">
+        You type rather than talk, on purpose — your microphone is live in the
+        call, so speaking to an assistant means everyone hears you doing it.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="label">Install</p>
+      <h2 class="display">Two lines</h2>
+      <p class="lead">
+        Companion needs one agent CLI installed and signed in. Either works.
+      </p>
+      <div class="grid">
+        <div class="card">
+          <h3>Companion</h3>
+          <p><code>brew install --cask souhaibbenfarhat/tap/companion</code></p>
+        </div>
+        <div class="card">
+          <h3>An agent</h3>
+          <p><code>npm install -g @anthropic-ai/claude-code</code><br /><br /><code>npm install -g @openai/codex</code></p>
+        </div>
+      </div>
+      <p class="lead" style="margin-top:1.75rem">
+        Companion is ad-hoc signed rather than notarized. Homebrew clears the
+        quarantine flag for you. Installing the zip by hand instead? Run
+        <code>xattr -dr com.apple.quarantine /Applications/Companion.app</code> once.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span>© 2026 Souhaib Ben Farhat · MIT</span>
+      <span>
+        <a class="link-underline" href="https://github.com/SouhaibBenFarhat/companion">Source</a>
+        &nbsp;·&nbsp;
+        <a class="link-underline" href="https://github.com/SouhaibBenFarhat/companion/releases">Releases</a>
+      </span>
+    </div>
+  </footer>
+
+  <script>
+    const button = document.getElementById('brew')
+    const label = document.getElementById('brewLabel')
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText('brew install --cask souhaibbenfarhat/tap/companion')
+        label.textContent = 'Copied'
+        setTimeout(() => { label.textContent = 'Copy' }, 1600)
+      } catch {
+        label.textContent = 'Press ⌘C'
+      }
+    })
+  </script>
+
+</body>
+</html>

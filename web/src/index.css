@@ -1,0 +1,251 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Colour
+   ---------------------------------------------------------------------------
+   Built on OKLCH rather than HSL. In HSL the same lightness number looks very
+   different on one hue than another, so a palette rotated around a hue comes
+   out uneven and every colour needs hand-fixing. OKLCH is perceptually even:
+   one hue plus a lightness ramp gives a set that actually looks like a set.
+
+   Three surface levels, no more: base (the panel), raised (cards, input),
+   overlay (menus). Depth comes from those steps plus a hairline border —
+   never a drop shadow, which looks wrong on a floating macOS panel.
+--------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light dark;
+
+  --c-base: oklch(98% 0.003 285);
+  --c-raised: oklch(100% 0 0);
+  --c-overlay: oklch(100% 0 0);
+  --c-border: oklch(91% 0.006 285);
+  --c-text: oklch(27% 0.02 285);
+  --c-muted: oklch(53% 0.02 285);
+  --c-accent: oklch(55% 0.19 285);
+  --c-accent-fg: oklch(99% 0 0);
+  --c-code: oklch(96.5% 0.005 285);
+  --c-danger: oklch(52% 0.19 25);
+
+  /* Syntax colours, same hue family so code blocks belong to the theme. */
+  --c-syn-keyword: oklch(50% 0.18 300);
+  --c-syn-string: oklch(48% 0.13 150);
+  --c-syn-number: oklch(52% 0.14 60);
+  --c-syn-comment: oklch(62% 0.02 285);
+  --c-syn-name: oklch(45% 0.15 245);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-base: oklch(19% 0.011 285);
+    --c-raised: oklch(23.5% 0.013 285);
+    --c-overlay: oklch(27% 0.015 285);
+    --c-border: oklch(33% 0.015 285);
+    --c-text: oklch(94% 0.004 285);
+    --c-muted: oklch(69% 0.014 285);
+    --c-accent: oklch(74% 0.14 285);
+    --c-accent-fg: oklch(20% 0.03 285);
+    --c-code: oklch(16% 0.01 285);
+    --c-danger: oklch(70% 0.16 25);
+
+    --c-syn-keyword: oklch(78% 0.13 300);
+    --c-syn-string: oklch(80% 0.12 150);
+    --c-syn-number: oklch(82% 0.12 70);
+    --c-syn-comment: oklch(58% 0.015 285);
+    --c-syn-name: oklch(80% 0.11 245);
+  }
+}
+
+/* `inline` keeps the var() reference instead of baking the value in, which is
+   what lets one stylesheet follow the system appearance at runtime. */
+@theme inline {
+  --color-base: var(--c-base);
+  --color-raised: var(--c-raised);
+  --color-overlay: var(--c-overlay);
+  --color-line: var(--c-border);
+  --color-ink: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-accent: var(--c-accent);
+  --color-accent-fg: var(--c-accent-fg);
+  --color-code: var(--c-code);
+  --color-danger: var(--c-danger);
+
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* Body text never sits on a translucent blur: the panel floats over unknown
+     content, so contrast could not be guaranteed. A solid base keeps it fixed. */
+  background: var(--c-base);
+  color: var(--c-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  /* The window is borderless; the rounded corner lives here. */
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Only the conversation is selectable — you copy answers, not chrome. */
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: auto;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--c-muted) 35%, transparent);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--c-muted) 55%, transparent);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   Markdown
+--------------------------------------------------------------------------- */
+
+.prose > * + * {
+  margin-top: 0.6em;
+}
+
+.prose p {
+  margin: 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.15em;
+  margin: 0;
+}
+
+.prose ul {
+  list-style: disc;
+}
+
+.prose ol {
+  list-style: decimal;
+}
+
+.prose li + li {
+  margin-top: 0.2em;
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+  font-weight: 600;
+  font-size: 1em;
+  margin: 0;
+}
+
+.prose a {
+  color: var(--c-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose strong {
+  font-weight: 600;
+}
+
+.prose code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+  background: var(--c-code);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  padding: 0.05em 0.32em;
+}
+
+.prose pre {
+  margin: 0;
+  background: var(--c-code);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.prose blockquote {
+  border-left: 2px solid var(--c-border);
+  padding-left: 0.75em;
+  color: var(--c-muted);
+}
+
+.prose table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid var(--c-border);
+  padding: 3px 8px;
+  text-align: left;
+}
+
+/* highlight.js tokens, mapped onto the theme so code belongs to the palette
+   instead of importing a stylesheet that only works in one appearance. */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-built_in {
+  color: var(--c-syn-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: var(--c-syn-string);
+}
+
+.hljs-number,
+.hljs-symbol {
+  color: var(--c-syn-number);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--c-syn-comment);
+  font-style: italic;
+}
+
+.hljs-title,
+.hljs-name,
+.hljs-attr,
+.hljs-attribute,
+.hljs-type {
+  color: var(--c-syn-name);
+}

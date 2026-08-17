@@ -1,0 +1,45 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    # Job names are referenced by branch protection as required checks —
+    # keep "test" and "build" stable if you rename things.
+    name: test
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run tests
+        run: swift test
+
+  build:
+    name: build
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # Catches packaging breakage (Info.plist, icon, the web build, codesign)
+      # on the PR instead of on release day.
+      - name: Build the app bundle
+        run: scripts/build-app.sh
+
+      - name: Verify the ad-hoc signature
+        run: codesign --verify --strict --verbose=2 dist/Companion.app
+
+      # The panel is empty without these, and nothing else would notice.
+      - name: Check the interface made it into the bundle
+        run: test -f dist/Companion.app/Contents/Resources/web/index.html

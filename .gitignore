@@ -1,0 +1,10 @@
+.build/
+dist/
+.DS_Store
+packaging/AppIcon.iconset/
+packaging/AppIcon.icns
+.swiftpm/
+
+# Web UI
+web/node_modules/
+web/dist/

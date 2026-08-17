@@ -1,0 +1,35 @@
+name: Release Drafter
+
+# Keeps a rolling DRAFT GitHub Release up to date on every merge to main, and
+# autolabels PRs from their (Conventional Commit style) title so the draft
+# categorizes correctly. Publishing the draft is manual — and publishing is what
+# triggers release.yml to build the zip and bump the Homebrew cask.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # For the autolabeler — label PRs as they open/update so the draft is correct.
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  update_release_draft:
+    name: Update release draft
+    permissions:
+      contents: write # create/update the draft release
+      pull-requests: write # apply autolabels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        # On pull_request this only autolabels, and release-drafter reads its config
+        # from the DEFAULT branch — so it's best-effort here (and can't run at all on
+        # the PR that first introduces this config). Never block a PR on it; the
+        # push-to-main run is authoritative and still fails loudly if the config is broken.
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        env:
+          # Optional user PAT so the draft release is owned by YOU instead of
+          # github-actions[bot]. Falls back to the default token if the secret is missing.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}

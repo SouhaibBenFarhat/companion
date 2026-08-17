@@ -1,0 +1,70 @@
+# Release Drafter config — PR-based changelog driven by Conventional Commit PR titles.
+# The autolabeler applies labels from the PR title; categories group by those labels;
+# version-resolver computes the next semver bump from them. PRs whose titles don't
+# match any pattern still appear in the draft, just uncategorized.
+
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+# One changelog line per merged PR: title, PR number, author.
+change-template: '- $TITLE (#$NUMBER) @$AUTHOR'
+change-title-escapes: '\<*_&'
+
+categories:
+  - title: '🚀 Features'
+    labels: [feature]
+  - title: '🐛 Fixes'
+    labels: [fix]
+  - title: '🧹 Maintenance'
+    labels: [maintenance]
+
+# feat → minor, fix/chore/etc → patch, anything breaking (`!` or BREAKING CHANGE) → major.
+version-resolver:
+  major:
+    labels: [breaking]
+  minor:
+    labels: [feature]
+  patch:
+    labels: [fix, maintenance]
+  default: patch
+
+# Apply labels automatically from Conventional-Commit-style PR titles.
+autolabeler:
+  - label: feature
+    title: '/^feat(\(.+\))?!?:/i'
+  - label: fix
+    title: '/^fix(\(.+\))?!?:/i'
+  - label: maintenance
+    title: '/^(chore|ci|build|docs|refactor|perf|test|style|revert)(\(.+\))?!?:/i'
+  - label: breaking
+    title: '/^[a-z]+(\(.+\))?!:/i'
+  - label: breaking
+    body: '/BREAKING CHANGE/'
+
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/SouhaibBenFarhat/companion/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+  ---
+  ### 📦 Install (macOS, Apple Silicon)
+
+  ```
+  brew install --cask souhaibbenfarhat/tap/companion   # first install
+  brew upgrade --cask companion                        # upgrade
+  ```
+
+  Companion drives a coding agent CLI, so install one and sign in — there is no
+  API key to add:
+
+  ```
+  npm install -g @anthropic-ai/claude-code   # or
+  npm install -g @openai/codex
+  ```
+
+  Press ⌥Space to show the panel. It never appears in screen share.
+
+  Installing manually from the attached `Companion-arm64.zip` instead? Clear
+  Gatekeeper's quarantine flag once: `xattr -dr com.apple.quarantine /Applications/Companion.app`
