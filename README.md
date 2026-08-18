@@ -64,8 +64,11 @@ line interface) you already have installed, running headless in your repo.
 
 ```
 brew install --cask souhaibbenfarhat/tap/companion   # first install
-brew upgrade --cask companion                        # upgrade
+brew upgrade --cask souhaibbenfarhat/tap/companion   # upgrade
 ```
+
+Use the full tap name both times. Homebrew's main tap already has a cask called
+`companion` for an unrelated app, so the bare name installs that one instead.
 
 macOS 14 (Sonoma) or later, Apple Silicon. Then one agent, signed in:
 

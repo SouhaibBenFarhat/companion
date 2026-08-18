@@ -53,7 +53,7 @@ template: |
 
   ```
   brew install --cask souhaibbenfarhat/tap/companion   # first install
-  brew upgrade --cask companion                        # upgrade
+  brew upgrade --cask souhaibbenfarhat/tap/companion   # upgrade
   ```
 
   Companion drives a coding agent CLI, so install one and sign in — there is no
