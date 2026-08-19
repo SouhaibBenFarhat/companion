@@ -16,6 +16,10 @@ export interface AgentInfo {
   title: string
   path: string
   found: boolean
+  /** Reported by `--version`, empty until the check finishes. */
+  version: string
+  /** Whether the binary has actually been run yet. */
+  checked: boolean
 }
 
 export interface SettingsPayload {
@@ -26,12 +30,35 @@ export interface SettingsPayload {
   systemPrompt: string
 }
 
+export type PermissionId = 'microphone' | 'systemAudio' | 'accessibility'
+export type PermissionState = 'granted' | 'denied' | 'notAsked'
+
+export interface PermissionItem {
+  id: PermissionId
+  title: string
+  reason: string
+  state: PermissionState
+  /** Granting these while the app runs does not take effect until it restarts. */
+  needsRestart: boolean
+}
+
+export interface Permissions {
+  canListen: boolean
+  canSeeScreen: boolean
+  isReady: boolean
+  summary: string
+  /** The one to ask for next, or empty when nothing is missing. */
+  next: string
+  items: PermissionItem[]
+}
+
 export interface StatePayload {
   type: 'state'
   busy: boolean
   agent: AgentInfo
   settings: SettingsPayload
   repository: string
+  permissions: Permissions
   currentId: string
   conversations: ConversationSummary[]
   messages: Msg[]
@@ -43,7 +70,7 @@ export type Incoming =
   | { type: 'delta'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'busy'; busy: boolean }
-  | { type: 'done'; isError: boolean; message: string }
+  | { type: 'done'; isError: boolean; message: string; code?: string }
   | { type: 'focus' }
 
 /** Everything the page can ask Swift to do. */
@@ -56,5 +83,9 @@ export type Outgoing =
   | { type: 'selectConversation'; id: string }
   | { type: 'deleteConversation'; id: string }
   | { type: 'pickRepository' }
+  | { type: 'signIn' }
+  | { type: 'requestPermission'; id: PermissionId }
+  | { type: 'openPermissionSettings'; id: PermissionId }
+  | { type: 'refreshPermissions' }
   | { type: 'drag'; dx: number; dy: number }
   | { type: 'updateSettings'; agent?: string; agentPath?: string; permission?: string; systemPrompt?: string }

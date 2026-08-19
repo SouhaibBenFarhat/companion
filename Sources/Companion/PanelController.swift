@@ -65,19 +65,50 @@ final class PanelController: NSObject {
 
         webView.autoresizingMask = [.width, .height]
         webView.frame = panel.contentLayoutRect
-        // Let the page paint the background instead of a white flash on load.
+        // Let the page paint the background instead of a white flash on load,
+        // and let the material below show through where the page is see-through.
         webView.setValue(false, forKey: "drawsBackground")
 
-        // The window is borderless, so the rounded corner has to be clipped
-        // here — otherwise the web view paints square corners over it.
-        panel.contentView?.wantsLayer = true
-        panel.contentView?.layer?.cornerRadius = 12
-        panel.contentView?.layer?.masksToBounds = true
+        // Vibrancy: the blurred, tinted view of whatever is behind the panel.
+        let backdrop = NSVisualEffectView(frame: panel.contentLayoutRect)
+        backdrop.autoresizingMask = [.width, .height]
+        backdrop.material = .popover
+        backdrop.blendingMode = .behindWindow
+        // Forced active rather than following the window. Companion is
+        // deliberately never the frontmost app, so "follows window state" would
+        // leave the material permanently dimmed — the one setting that makes
+        // vibrancy look broken in a non-activating panel.
+        backdrop.state = .active
 
-        panel.contentView?.addSubview(webView)
+        // The window is borderless, so the rounded corner has to be clipped
+        // here — otherwise the material and web view paint square corners.
+        backdrop.wantsLayer = true
+        backdrop.layer?.cornerRadius = 12
+        backdrop.layer?.masksToBounds = true
+        backdrop.maskImage = Self.cornerMask(radius: 12)
+
+        panel.contentView = backdrop
+        backdrop.addSubview(webView)
         panel.delegate = self
 
         load()
+    }
+
+    /// A resizable rounded-rectangle mask for the material.
+    ///
+    /// Layer corner radius alone does not round `NSVisualEffectView` — the blur
+    /// is drawn outside the layer's clipping, so the corners come back square.
+    /// A mask image is the supported way to shape it.
+    private static func cornerMask(radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 
     // MARK: - Showing and hiding
@@ -141,7 +172,17 @@ final class PanelController: NSObject {
     // MARK: - State
 
     private func sendState() {
-        let agentPath = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)?.path
+        let resolved = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)
+        let agentPath = resolved?.path
+
+        // Confirm the binary runs, not just that a file is there. The first
+        // answer arrives asynchronously and refreshes the panel.
+        if let resolved, AgentProbe.cached(for: resolved.path) == nil {
+            AgentProbe.probe(executable: resolved) { [weak self] _ in self?.sendState() }
+        }
+        let probe = resolved.flatMap { AgentProbe.cached(for: $0.path) }
+
+        let permissions = PermissionChecker.report()
         send([
             "type": "state",
             "busy": runner.isRunning,
@@ -149,7 +190,11 @@ final class PanelController: NSObject {
                 "kind": settings.agent.rawValue,
                 "title": settings.agent.title,
                 "path": agentPath ?? "",
-                "found": agentPath != nil,
+                // Optimistic until the probe answers: reporting "not found"
+                // for the second it takes would flash a false error.
+                "found": agentPath != nil && (probe?.works ?? true),
+                "version": probe?.version ?? "",
+                "checked": probe != nil,
             ],
             "settings": [
                 "agent": settings.agent.rawValue,
@@ -159,6 +204,22 @@ final class PanelController: NSObject {
                 "systemPrompt": settings.systemPrompt,
             ],
             "repository": settings.repositoryURL().path,
+            "permissions": [
+                "canListen": permissions.canListen,
+                "canSeeScreen": permissions.canSeeScreen,
+                "isReady": permissions.isReady,
+                "summary": permissions.summary,
+                "next": permissions.nextToRequest?.rawValue ?? "",
+                "items": Permission.allCases.map { permission in
+                    [
+                        "id": permission.rawValue,
+                        "title": permission.title,
+                        "reason": permission.reason,
+                        "state": permissions.state(of: permission).rawValue,
+                        "needsRestart": permission.needsRestartAfterGranting,
+                    ]
+                },
+            ],
             "currentId": current.id,
             "conversations": conversations
                 .forRepository(settings.repositoryURL().path)
@@ -246,6 +307,13 @@ final class PanelController: NSObject {
         }
 
         let failed = status != 0
+        if failed, answer.isEmpty {
+            // The session the agent opened produced nothing usable. Keeping its
+            // id would make every later message resume a dead conversation.
+            current.agentSessionID = nil
+            try? conversations.save(current)
+        }
+
         var message = ""
         if failed {
             message = errorText.isEmpty
@@ -253,7 +321,13 @@ final class PanelController: NSObject {
                 : errorText
         }
 
-        send(["type": "done", "isError": failed, "message": message])
+        send([
+            "type": "done",
+            "isError": failed,
+            "message": message,
+            // Lets the panel offer a Sign in button without matching on words.
+            "code": runner.failure?.code ?? "",
+        ])
         sendState()
     }
 
@@ -338,6 +412,25 @@ extension PanelController: WKScriptMessageHandler {
         case "pickRepository":
             pickRepository()
 
+        case "requestPermission":
+            guard let raw = body["id"] as? String, let permission = Permission(rawValue: raw) else { return }
+            PermissionChecker.request(permission) { [weak self] _ in self?.sendState() }
+
+        case "openPermissionSettings":
+            guard let raw = body["id"] as? String, let permission = Permission(rawValue: raw) else { return }
+            PermissionChecker.openSettings(for: permission)
+
+        case "refreshPermissions":
+            // Cheap, and the only way to notice a grant made in System Settings
+            // while the panel was open.
+            sendState()
+
+        case "signIn":
+            SignIn.openTerminal(
+                agent: settings.agent,
+                executable: AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)
+            )
+
         case "updateSettings":
             if let raw = body["agent"] as? String, let kind = AgentKind(rawValue: raw) { settings.agent = kind }
             if let path = body["agentPath"] as? String { settings.agentPath = path }
@@ -345,6 +438,7 @@ extension PanelController: WKScriptMessageHandler {
                 settings.permission = value
             }
             if let prompt = body["systemPrompt"] as? String { settings.systemPrompt = prompt }
+            AgentProbe.forget()
             persistSettings()
             sendState()
 

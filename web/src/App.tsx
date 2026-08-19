@@ -5,14 +5,22 @@ import { Composer } from './components/Composer'
 import { HistoryMenu } from './components/HistoryMenu'
 import { SettingsSheet } from './components/SettingsSheet'
 import { listen, send } from './lib/bridge'
+import { useTypewriter } from './lib/useTypewriter'
 import type { StatePayload } from './lib/types'
 
 export function App() {
   const [state, setState] = useState<StatePayload | null>(null)
-  const [streaming, setStreaming] = useState('')
+  const {
+    shown: streaming,
+    push: pushStreaming,
+    reset: resetStreaming,
+    flush: flushStreaming,
+    setActive: setStreamingActive,
+  } = useTypewriter()
   const [tool, setTool] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [errorCode, setErrorCode] = useState('')
   const [showHistory, setShowHistory] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [focusToken, setFocusToken] = useState(0)
@@ -25,24 +33,33 @@ export function App() {
           setBusy(payload.busy)
           // The finished answer now lives in `messages`; keeping the streamed
           // copy too would show it twice.
-          setStreaming('')
+          resetStreaming()
           setTool(null)
           break
         case 'delta':
           setError('')
-          setStreaming((text) => text + payload.text)
+          setErrorCode('')
+          pushStreaming(payload.text)
           break
         case 'tool':
           setTool(payload.name)
           break
         case 'busy':
           setBusy(payload.busy)
+          // Keeps the draw loop alive across the gaps between chunks.
+          setStreamingActive(payload.busy)
           if (payload.busy) setError('')
           break
         case 'done':
           setBusy(false)
           setTool(null)
-          if (payload.isError && payload.message) setError(payload.message)
+          // Stop pacing the moment the run ends — waiting out the animation
+          // after the answer is complete would just be a delay.
+          flushStreaming()
+          if (payload.isError && payload.message) {
+            setError(payload.message)
+            setErrorCode(payload.code ?? '')
+          }
           break
         case 'focus':
           setFocusToken((token) => token + 1)
@@ -52,7 +69,7 @@ export function App() {
 
     send({ type: 'ready' })
     return stop
-  }, [])
+  }, [pushStreaming, resetStreaming, flushStreaming, setStreamingActive])
 
   // Esc hides the panel from anywhere, including mid-answer.
   useEffect(() => {
@@ -67,13 +84,15 @@ export function App() {
   }, [showHistory, showSettings])
 
   if (!state) {
-    return <div className="grid h-full place-items-center text-[12px] text-muted">Loading…</div>
+    return <div className="grid h-full place-items-center bg-well text-[12px] text-muted">Loading…</div>
   }
 
   return (
-    <div className="relative flex h-full flex-col">
+    <div className="relative flex h-full flex-col bg-well">
       <Header
         repository={state.repository}
+        historyOpen={showHistory}
+        settingsOpen={showSettings}
         onHistory={() => setShowHistory((open) => !open)}
         onSettings={() => setShowSettings((open) => !open)}
       />
@@ -83,6 +102,7 @@ export function App() {
           settings={state.settings}
           agent={state.agent}
           repository={state.repository}
+          permissions={state.permissions}
           onClose={() => setShowSettings(false)}
         />
       ) : (
@@ -93,6 +113,7 @@ export function App() {
             busy={busy}
             tool={tool}
             error={error}
+            errorCode={errorCode}
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
           />

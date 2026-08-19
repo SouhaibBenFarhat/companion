@@ -77,6 +77,25 @@ npm install -g @anthropic-ai/claude-code   # or
 npm install -g @openai/codex
 ```
 
+### Version floors
+
+The chat panel runs on macOS 14. The live-awareness features need more:
+
+| feature | needs |
+| --- | --- |
+| Chat panel, repo questions | macOS 14 |
+| Listening to a call | macOS 14.4 |
+| On-device transcription | macOS 26 |
+
+Companion is ad-hoc signed rather than notarized, and macOS ties permission
+grants to an app's signature. That signature changes on every build, so after a
+`brew upgrade` you may have to grant Microphone, Screen Recording and
+Accessibility again. This is a deliberate trade for a personal tool.
+
+While Companion is listening, macOS shows its own recording indicator in the
+menu bar. The panel stays out of screen share; that indicator does not, and
+there is no supported way to hide it.
+
 ## Use
 
 | Shortcut | Action |

@@ -24,8 +24,24 @@ public struct ConversationStore {
     }
 
     public func save(_ conversation: Conversation) throws {
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let data = try Self.encoder.encode(conversation)
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+
+        // Conversations hold whatever was discussed, which on a work call is
+        // someone else's code. Scrub anything credential-shaped on the way in,
+        // so a pasted key does not live on disk forever.
+        var scrubbed = conversation
+        scrubbed.messages = conversation.messages.map { message in
+            var copy = message
+            copy.text = Redaction.scrub(message.text)
+            return copy
+        }
+        scrubbed.title = Redaction.scrub(conversation.title)
+
+        let data = try Self.encoder.encode(scrubbed)
         try data.write(to: url(for: conversation.id), options: .atomic)
     }
 
