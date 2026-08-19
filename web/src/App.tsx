@@ -4,7 +4,8 @@ import { MessageList } from './components/MessageList'
 import { Composer } from './components/Composer'
 import { HistoryMenu } from './components/HistoryMenu'
 import { SettingsSheet } from './components/SettingsSheet'
-import { AwarenessBar, StartListening } from './components/AwarenessBar'
+import { AwarenessBar } from './components/AwarenessBar'
+import { ComposerControls } from './components/ComposerControls'
 import { listen, send } from './lib/bridge'
 import { useTypewriter } from './lib/useTypewriter'
 import type { StatePayload, Suggestion, TranscriptLine } from './lib/types'
@@ -128,6 +129,17 @@ export function App() {
         error={captureError}
         transcript={transcript}
         screen={screen}
+        suggestionsEnabled={state.settings.suggestionsEnabled}
+        onSuggestionsChange={(value) =>
+          send({
+            type: 'updateSettings',
+            agent: state.settings.agent,
+            agentPath: state.settings.agentPath,
+            permission: state.settings.permission,
+            systemPrompt: state.settings.systemPrompt,
+            suggestionsEnabled: value,
+          })
+        }
       />
 
       {showSettings ? (
@@ -152,12 +164,21 @@ export function App() {
             suggestion={suggestion}
             onDismissSuggestion={() => setSuggestion(null)}
           />
-          {!state.listening.active && (
-            <div className="shrink-0 px-2.5 pt-2">
-              <StartListening canListen={state.permissions.canListen} />
-            </div>
-          )}
-          <Composer busy={busy} disabled={!state.agent.found} focusToken={focusToken} />
+          <Composer
+            busy={busy}
+            disabled={!state.agent.found}
+            focusToken={focusToken}
+            controls={
+              <ComposerControls
+                settings={state.settings}
+                agent={state.agent}
+                repository={state.repository}
+                listening={state.listening}
+                permissions={state.permissions}
+                onOpenPermissions={() => setShowSettings(true)}
+              />
+            }
+          />
         </>
       )}
 

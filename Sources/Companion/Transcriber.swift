@@ -51,7 +51,8 @@ final class Transcriber {
         do {
             try await prepareModel(for: transcriber, locale: locale)
         } catch {
-            onError?("Could not prepare the speech model: \(error.localizedDescription)")
+            await report("Could not prepare the speech model: \(error.localizedDescription)")
+            await stop()
             return
         }
 
@@ -79,7 +80,10 @@ final class Transcriber {
         do {
             try await analyzer.start(inputSequence: stream)
         } catch {
-            onError?("Could not start transcription: \(error.localizedDescription)")
+            await report("Could not start transcription: \(error.localizedDescription)")
+            // Leaving the half-built session in place would hold a reserved
+            // locale and a live results task that nothing can ever finish.
+            await stop()
         }
     }
 
@@ -115,16 +119,21 @@ final class Transcriber {
 
     // MARK: - Model assets
 
+    private func report(_ message: String) async {
+        await MainActor.run { self.onError?(message) }
+    }
+
     /// Reserving comes first. Without it the status never reaches installed and
     /// the model is downloaded again on every launch.
     private func prepareModel(for transcriber: SpeechTranscriber, locale: Locale) async throws {
-        let supported = await SpeechTranscriber.supportedLocales
-        guard supported.contains(where: { $0.identifier(.bcp47) == locale.identifier(.bcp47) }) else {
-            throw TranscriberError.localeUnsupported(locale.identifier)
-        }
+        // Matching full identifiers fails for most people: Locale.current
+        // carries the region, so a British user in Germany is "en-DE", which is
+        // in nobody's supported list even though English is supported.
+        let resolved = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+        guard let resolved else { throw TranscriberError.localeUnsupported(locale.identifier) }
 
-        try await AssetInventory.reserve(locale: locale)
-        reservedLocale = locale
+        try await AssetInventory.reserve(locale: resolved)
+        reservedLocale = resolved
 
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await request.downloadAndInstall()

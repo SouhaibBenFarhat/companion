@@ -50,11 +50,25 @@ public struct AgentCommand: Equatable, Sendable {
     public let executable: URL
     public let arguments: [String]
     public let workingDirectory: URL
+    /// Written to the child's standard input instead of appearing in `arguments`.
+    ///
+    /// Process arguments are readable by every process running as the same
+    /// user — `ps` shows them. The prompt carries the call transcript, the text
+    /// of the focused window and the page being viewed, so putting it in argv
+    /// published a live transcript of a private conversation to the whole
+    /// machine. Standard input is not visible that way.
+    public let standardInput: String?
 
-    public init(executable: URL, arguments: [String], workingDirectory: URL) {
+    public init(
+        executable: URL,
+        arguments: [String],
+        workingDirectory: URL,
+        standardInput: String? = nil
+    ) {
         self.executable = executable
         self.arguments = arguments
         self.workingDirectory = workingDirectory
+        self.standardInput = standardInput
     }
 }
 
@@ -81,14 +95,12 @@ public enum AgentCommandBuilder {
         switch kind {
         case .claude:
             arguments = claudeArguments(
-                prompt: prompt,
                 sessionID: sessionID,
                 systemPrompt: systemPrompt,
                 permission: permission
             )
         case .codex:
             arguments = codexArguments(
-                prompt: prompt,
                 workingDirectory: workingDirectory,
                 sessionID: sessionID,
                 permission: permission
@@ -97,12 +109,12 @@ public enum AgentCommandBuilder {
         return AgentCommand(
             executable: executable,
             arguments: arguments,
-            workingDirectory: workingDirectory
+            workingDirectory: workingDirectory,
+            standardInput: prompt
         )
     }
 
     private static func claudeArguments(
-        prompt: String,
         sessionID: String?,
         systemPrompt: String?,
         permission: AgentPermission
@@ -113,8 +125,9 @@ public enum AgentCommandBuilder {
         // `--include-partial-messages` is what makes the answer appear a word
         // at a time instead of landing in one block at the end. Without it a
         // ten-second answer is ten seconds of nothing followed by a wall.
+        // No prompt here. It goes on standard input, out of the process table.
         var arguments = [
-            "-p", prompt,
+            "-p",
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
@@ -141,7 +154,6 @@ public enum AgentCommandBuilder {
     }
 
     private static func codexArguments(
-        prompt: String,
         workingDirectory: URL,
         sessionID: String?,
         permission: AgentPermission
@@ -162,8 +174,8 @@ public enum AgentCommandBuilder {
             arguments += ["--sandbox", "workspace-write"]
         }
 
-        // Prompt goes last so it is never mistaken for a flag value.
-        arguments.append(prompt)
+        // The prompt is written to standard input, not appended here.
+        arguments.append("-")
         return arguments
     }
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { send } from '../lib/bridge'
-import { Bar, Button, Field, Input, Notice, Select, Textarea } from '../ui'
+import { Bar, Button, Field, Input, Notice, Select, Textarea, Toggle } from '../ui'
 import { FolderIcon, iconSize, iconStroke } from '../ui/icons'
 import { Permissions } from './Permissions'
 import type { AgentInfo, Permissions as PermissionsPayload, SettingsPayload } from '../lib/types'
@@ -38,6 +38,7 @@ export function SettingsSheet({
       agentPath: next.agentPath,
       permission: next.permission,
       systemPrompt: next.systemPrompt,
+      suggestionsEnabled: next.suggestionsEnabled,
     })
   }
 
@@ -105,6 +106,15 @@ export function SettingsSheet({
               <option value="acceptEdits">Allow edits</option>
             </Select>
           </Field>
+        </Group>
+
+        <Group title="During a call">
+          <Toggle
+            label="Speak up without being asked"
+            hint="Off, Companion listens and answers when you ask. On, it can interrupt with something it thinks you would miss — at most three times a minute, never while you are talking."
+            checked={draft.suggestionsEnabled}
+            onChange={(value) => apply({ suggestionsEnabled: value })}
+          />
         </Group>
 
         <Group title="Permissions">

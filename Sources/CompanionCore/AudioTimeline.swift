@@ -6,16 +6,24 @@ import Foundation
 /// clocks, and each reports its own host time. Without a shared origin the
 /// transcript can show an answer before the question.
 public struct AudioTimeline: Sendable {
-    /// Host time of the moment listening started.
+    /// Host time of the moment listening started, in mach ticks.
     public let originHostTime: UInt64
+    /// How long a tick is on this machine. Not a constant, and not one
+    /// nanosecond — see `HostClock`.
+    public let clock: HostClock
     /// Per-stream correction, in seconds.
     ///
     /// Not guesswork: the microphone path reports `presentationLatency`, and a
     /// tap has its own. Defaults to zero, and only a device test can fill it in.
     public var offsets: [CaptureSpeaker: TimeInterval]
 
-    public init(originHostTime: UInt64, offsets: [CaptureSpeaker: TimeInterval] = [:]) {
+    public init(
+        originHostTime: UInt64,
+        clock: HostClock = .nanoseconds,
+        offsets: [CaptureSpeaker: TimeInterval] = [:]
+    ) {
         self.originHostTime = originHostTime
+        self.clock = clock
         self.offsets = offsets
     }
 
@@ -25,9 +33,9 @@ public struct AudioTimeline: Sendable {
         // number near 18 billion.
         let elapsed: TimeInterval
         if hostTime >= originHostTime {
-            elapsed = TimeInterval(hostTime - originHostTime) / 1_000_000_000
+            elapsed = clock.seconds(fromTicks: hostTime - originHostTime)
         } else {
-            elapsed = -TimeInterval(originHostTime - hostTime) / 1_000_000_000
+            elapsed = -clock.seconds(fromTicks: originHostTime - hostTime)
         }
         return elapsed + (offsets[speaker] ?? 0)
     }

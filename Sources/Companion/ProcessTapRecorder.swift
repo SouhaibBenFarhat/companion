@@ -24,9 +24,6 @@ final class ProcessTapRecorder {
     private var ioProcID: AudioDeviceIOProcID?
     private var format: AVAudioFormat?
 
-    /// Host time of the most recent block, for the shared clock.
-    private(set) var latestHostTime: UInt64 = 0
-
     init(ringCapacity: Int = 48_000 * 2) {
         ring = AudioRingBuffer(capacity: ringCapacity)
     }
@@ -35,7 +32,7 @@ final class ProcessTapRecorder {
 
     var streamFormat: AVAudioFormat? { format }
 
-    func drain(maximum: Int = .max) -> [Float] { ring.read(maximum: maximum) }
+    func drain(maximum: Int = .max) -> (samples: [Float], hostTime: UInt64) { ring.drain(maximum: maximum) }
     var droppedFrames: Int { ring.droppedFrames }
 
     // MARK: - Start and stop
@@ -45,6 +42,7 @@ final class ProcessTapRecorder {
         case tapFailed(OSStatus)
         case aggregateFailed(OSStatus)
         case formatUnavailable
+        case unsupportedFormat
         case ioProcFailed(OSStatus)
         case startFailed(OSStatus)
 
@@ -54,6 +52,7 @@ final class ProcessTapRecorder {
             case .tapFailed(let code): return "Could not create the audio tap (\(code)). Screen Recording permission is what grants this."
             case .aggregateFailed(let code): return "Could not create the capture device (\(code))."
             case .formatUnavailable: return "The tap reported no audio format."
+            case .unsupportedFormat: return "This Mac's audio format is not one Companion can read."
             case .ioProcFailed(let code): return "Could not attach to the capture device (\(code))."
             case .startFailed(let code): return "Could not start capture (\(code))."
             }
@@ -82,7 +81,7 @@ final class ProcessTapRecorder {
         }
         tapID = newTap
 
-        guard let tapUID = Self.string(of: tapID, kAudioTapPropertyUID) else {
+        guard let tapUID = Self.cfString(of: tapID, kAudioTapPropertyUID) else {
             stop()
             throw TapError.formatUnavailable
         }
@@ -92,6 +91,16 @@ final class ProcessTapRecorder {
         else {
             stop()
             throw TapError.formatUnavailable
+        }
+        // Read, and then actually checked. The block reinterprets the bytes as
+        // Float32, so anything else would be decoded as noise rather than
+        // failing visibly.
+        guard described.mFormatID == kAudioFormatLinearPCM,
+              described.mFormatFlags & kAudioFormatFlagIsFloat != 0,
+              described.mBitsPerChannel == 32
+        else {
+            stop()
+            throw TapError.unsupportedFormat
         }
         format = tapFormat
 
@@ -127,14 +136,16 @@ final class ProcessTapRecorder {
         }
         aggregateID = newAggregate
 
+        // Captured now, so the real-time block never touches a property.
+        let rate = described.mSampleRate
+
         // Weak, so a late block after teardown cannot resurrect this object.
         let procStatus = AudioDeviceCreateIOProcIDWithBlock(
             &ioProcID,
             aggregateID,
             nil
-        ) { [weak self] inputTime, inputData, _, _, _ in
+        ) { [weak self] _, inputData, inputTime, _, _ in
             guard let self else { return }
-            self.latestHostTime = inputTime.pointee.mHostTime
 
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
             guard let first = buffers.first, let raw = first.mData else { return }
@@ -144,7 +155,9 @@ final class ProcessTapRecorder {
                 start: raw.assumingMemoryBound(to: Float.self),
                 count: frameCount
             )
-            self.ring.write(samples)
+            // Host time and samples are recorded together, so a consumer can
+            // never pair a batch with a timestamp from a later batch.
+            self.ring.write(samples, hostTime: inputTime.pointee.mHostTime, sampleRate: rate)
         }
 
         guard procStatus == noErr, ioProcID != nil else {
@@ -183,14 +196,14 @@ final class ProcessTapRecorder {
     /// this they pile up invisibly across every crash during development.
     static func sweepOrphans() {
         for id in objectList(kAudioHardwarePropertyTapList) {
-            guard let name = string(of: id, kAudioTapPropertyDescription) ?? string(of: id, kAudioTapPropertyUID),
-                  name.contains(namePrefix)
+            guard let description = tapDescription(of: id),
+                  description.name.contains(namePrefix)
             else { continue }
             AudioHardwareDestroyProcessTap(id)
         }
 
         for id in objectList(kAudioHardwarePropertyDevices) {
-            guard let uid = string(of: id, kAudioDevicePropertyDeviceUID), uid.hasPrefix(namePrefix) else { continue }
+            guard let uid = cfString(of: id, kAudioDevicePropertyDeviceUID), uid.hasPrefix(namePrefix) else { continue }
             AudioHardwareDestroyAggregateDevice(id)
         }
     }
@@ -215,7 +228,32 @@ final class ProcessTapRecorder {
         return ids
     }
 
-    private static func string(of objectID: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
+    /// Reads the tap's own description object.
+    ///
+    /// This property is a `CATapDescription`, not a string. Reading it through
+    /// the CFString helper below returns `noErr` and hands back the object
+    /// anyway — the pointers are the same size — and bridging it to `String`
+    /// then sends `-length` to a `CATapDescription`, which is an Objective-C
+    /// exception Swift cannot catch. The app dies before it draws a window.
+    private static func tapDescription(of tap: AudioObjectID) -> CATapDescription? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioTapPropertyDescription,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size = UInt32(MemoryLayout<UnsafeRawPointer>.size)
+        var unmanaged: Unmanaged<CATapDescription>?
+        let status = withUnsafeMutablePointer(to: &unmanaged) {
+            AudioObjectGetPropertyData(tap, &address, 0, nil, &size, $0)
+        }
+        guard status == noErr, let unmanaged else { return nil }
+        // Handed back already retained.
+        return unmanaged.takeRetainedValue()
+    }
+
+    /// Strings only. Pointing this at a property whose value is an object
+    /// compiles, succeeds, and then crashes on the bridge — see above.
+    private static func cfString(of objectID: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
         var address = AudioObjectPropertyAddress(
             mSelector: selector,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -254,6 +292,6 @@ final class ProcessTapRecorder {
             AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID
         ) == noErr, deviceID != AudioObjectID(kAudioObjectUnknown) else { return nil }
 
-        return string(of: deviceID, kAudioDevicePropertyDeviceUID)
+        return cfString(of: deviceID, kAudioDevicePropertyDeviceUID)
     }
 }

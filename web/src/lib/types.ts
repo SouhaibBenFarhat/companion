@@ -28,6 +28,9 @@ export interface SettingsPayload {
   repositoryPath: string
   permission: string
   systemPrompt: string
+  /** Whether Companion may speak without being asked. */
+  suggestionsEnabled: boolean
+  persistTranscript: boolean
 }
 
 export type PermissionId = 'microphone' | 'systemAudio' | 'accessibility'
@@ -121,4 +124,11 @@ export type Outgoing =
   | { type: 'refreshPermissions' }
   | { type: 'toggleListening' }
   | { type: 'drag'; dx: number; dy: number }
-  | { type: 'updateSettings'; agent?: string; agentPath?: string; permission?: string; systemPrompt?: string }
+  | {
+      type: 'updateSettings'
+      agent?: string
+      agentPath?: string
+      permission?: string
+      systemPrompt?: string
+      suggestionsEnabled?: boolean
+    }

@@ -43,7 +43,6 @@ final class AwarenessCoordinator {
     )
 
     init() {
-        capture.onLevels = { [weak self] levels in self?.onLevels?(levels) }
         capture.onError = { [weak self] message in self?.onError?(message) }
         capture.onChunk = { [weak self] chunk in self?.consume(chunk) }
         capture.onLevels = { [weak self] levels in
@@ -60,8 +59,11 @@ final class AwarenessCoordinator {
 
     // MARK: - Lifecycle
 
+    private(set) var settings = AwarenessSettings()
+
     func start(settings: AwarenessSettings) {
         guard !isListening else { return }
+        self.settings = settings
         guard SpeechSupport.isAvailable else {
             // Capture still works and the meters still move; only the words
             // are missing. Say so rather than refusing to start.

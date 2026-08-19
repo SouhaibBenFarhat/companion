@@ -11,11 +11,13 @@ export function Composer({
   busy,
   disabled,
   focusToken,
+  controls,
 }: {
   busy: boolean
   disabled: boolean
   /** Changes whenever the panel is summoned, so the input takes focus again. */
   focusToken: number
+  controls: React.ReactNode
 }) {
   const input = useRef<HTMLTextAreaElement>(null)
 
@@ -45,7 +47,7 @@ export function Composer({
     <Bar edge="top" className="p-2.5">
       {/* A recessed well, not another raised surface: the field reads as a hole
           in the chrome rather than a card sitting on it. */}
-      <div className="rounded-xl border border-line-strong bg-input px-3 pb-2 pt-2.5 transition-colors focus-within:border-accent focus-within:bg-input-focus">
+      <div className="rounded-xl border border-line-strong bg-input px-2.5 pb-1.5 pt-2.5 transition-colors focus-within:border-accent focus-within:bg-input-focus">
         <textarea
           ref={input}
           rows={3}
@@ -59,11 +61,15 @@ export function Composer({
           }}
           placeholder={disabled ? 'No agent found' : 'Ask about this repo…'}
           style={{ minHeight: MIN_HEIGHT, maxHeight: MAX_HEIGHT }}
-          className="selectable block w-full resize-none bg-transparent text-[13px] leading-relaxed text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed"
+          className="selectable block w-full resize-none bg-transparent px-0.5 text-[13px] leading-relaxed text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed"
         />
 
-        {/* Actions on their own row, so growing text never squeezes them. */}
-        <div className="flex items-center justify-end gap-1.5 pt-1">
+        {/* Settings on the left, send on the right, one line. Inside the well
+            rather than above it — everything shipped puts them here, and above
+            the box is where things go when they are meant to disappear. */}
+        <div className="flex items-center gap-1.5 pt-1">
+          {controls}
+          <span className="flex-1" />
           {busy && (
             <Button variant="ghost" size="sm" onClick={() => send({ type: 'cancel' })}>
               Stop

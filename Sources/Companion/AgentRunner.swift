@@ -32,6 +32,9 @@ final class AgentRunner {
     private var errorText = ""
     private var deadline: DispatchWorkItem?
     private var diagnosticTimer: DispatchSourceTimer?
+    /// Held so cancel() can detach the handlers. Only the termination handler
+    /// cleared them before, which never runs on a cancelled run.
+    private var openPipes: [Pipe] = []
     private var timedOut = false
     private var diagnosed: AgentFailure?
 
@@ -67,11 +70,23 @@ final class AgentRunner {
         let errors = Pipe()
         process.standardOutput = output
         process.standardError = errors
-        // Without this the agent can block forever waiting on a prompt it can
-        // never receive, and the panel just spins with no explanation.
-        process.standardInput = FileHandle.nullDevice
+
+        // The prompt goes here rather than in the arguments, where `ps` would
+        // show the whole call transcript to every process on the machine.
+        // Closed straight after writing, so the agent never waits on more input.
+        if let prompt = command.standardInput {
+            let input = Pipe()
+            process.standardInput = input
+            DispatchQueue.global(qos: .userInitiated).async {
+                input.fileHandleForWriting.write(Data(prompt.utf8))
+                try? input.fileHandleForWriting.close()
+            }
+        } else {
+            process.standardInput = FileHandle.nullDevice
+        }
 
         state.sync {
+            self.openPipes = [output, errors]
             self.outputBuffer = LineBuffer()
             self.errorText = ""
             self.timedOut = false
@@ -111,6 +126,7 @@ final class AgentRunner {
             output.fileHandleForReading.readabilityHandler = nil
             errors.fileHandleForReading.readabilityHandler = nil
             guard let self else { return }
+            self.state.sync { self.openPipes = [] }
 
             let (trailingLines, stderrText, wasTimeout, found) = self.state.sync {
                 () -> ([String], String, Bool, AgentFailure?) in
@@ -189,6 +205,12 @@ final class AgentRunner {
 
     func cancel() {
         let running: Process? = state.sync {
+            // Detach first. A handler left installed keeps firing against a
+            // dead process and keeps this object alive with it.
+            for pipe in self.openPipes {
+                pipe.fileHandleForReading.readabilityHandler = nil
+            }
+            self.openPipes = []
             self.diagnosticTimer?.cancel()
             self.diagnosticTimer = nil
             self.deadline?.cancel()
@@ -213,7 +235,8 @@ final class AgentRunner {
         SessionLog.shared.write(
             "spawn",
             "\(command.executable.lastPathComponent) flags=[\(flags.joined(separator: " "))] "
-                + "args=\(command.arguments.count) cwd=\(command.workingDirectory.lastPathComponent)"
+                + "promptChars=\(command.standardInput?.count ?? 0) "
+                + "cwd=\(command.workingDirectory.lastPathComponent)"
         )
     }
 

@@ -14,6 +14,13 @@ export {
   Trash2 as DeleteIcon,
   ChevronDown as ChevronIcon,
   FolderOpen as FolderIcon,
+  Lock as ReadOnlyIcon,
+  PencilLine as EditsIcon,
+  Mic as ListenIcon,
+  MicOff as MutedIcon,
+  Sparkles as SpeakUpIcon,
+  Terminal as AgentIcon,
+  Check as CheckIcon,
 } from 'lucide-react'
 
 /** Panel-sized default. Lucide draws on a 24px grid; 14 suits 13px text. */

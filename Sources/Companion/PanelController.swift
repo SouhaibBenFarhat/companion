@@ -95,6 +95,8 @@ final class PanelController: NSObject {
         backdrop.addSubview(webView)
         panel.delegate = self
 
+        awareness.updateRepository(settings.repositoryURL())
+
         awareness.onLevels = { [weak self] levels in
             // Its own message, never through `state` — the page resets the
             // streamed answer on every state payload, so routing levels there
@@ -242,7 +244,11 @@ final class PanelController: NSObject {
     /// Something happened worth thinking about. Ask the agent, and show the
     /// answer only if it is worth interrupting for.
     private func considerSpeaking(reason: TurnReason, line: String) {
-        guard settings.awareness.enabled, !runner.isRunning else { return }
+        // Two switches, not one. Listening is useful with Companion silent.
+        guard settings.awareness.enabled, settings.awareness.suggestionsEnabled else { return }
+        // Never while the user is waiting on an answer they asked for, and
+        // never on top of a suggestion already in flight.
+        guard !runner.isRunning, !suggestionRunner.isRunning else { return }
         guard let executable = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)
         else { return }
 
@@ -276,6 +282,13 @@ final class PanelController: NSObject {
                 guard let self else { return }
                 let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard self.awareness.admitSuggestion(text) else { return }
+                // Kept only if the user allows the transcript to be stored.
+                // Otherwise it is shown and forgotten, which is what "do not
+                // persist" has to mean or the setting is decoration.
+                if self.settings.awareness.persistTranscript {
+                    self.current.append(Message(role: .assistant, text: text))
+                    try? self.conversations.save(self.current)
+                }
                 self.send([
                     "type": "suggestion",
                     "text": text,
@@ -323,6 +336,8 @@ final class PanelController: NSObject {
                 "repositoryPath": settings.defaultRepositoryPath,
                 "permission": settings.permission.rawValue,
                 "systemPrompt": settings.systemPrompt,
+                "suggestionsEnabled": settings.awareness.suggestionsEnabled,
+                "persistTranscript": settings.awareness.persistTranscript,
             ],
             "repository": settings.repositoryURL().path,
             "listening": [
@@ -574,6 +589,7 @@ extension PanelController: WKScriptMessageHandler {
                 settings.permission = value
             }
             if let prompt = body["systemPrompt"] as? String { settings.systemPrompt = prompt }
+            if let value = body["suggestionsEnabled"] as? Bool { settings.awareness.suggestionsEnabled = value }
             AgentProbe.forget()
             persistSettings()
             sendState()

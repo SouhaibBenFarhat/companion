@@ -29,9 +29,30 @@ final class AgentCommandTests: XCTestCase {
         let command = build()
         XCTAssertEqual(command.executable, executable)
         XCTAssertEqual(command.workingDirectory, repository)
-        XCTAssertEqual(Array(command.arguments.prefix(2)), ["-p", "why is this failing?"])
+        XCTAssertEqual(command.arguments.first, "-p")
         XCTAssertTrue(command.arguments.contains("--output-format"))
         XCTAssertTrue(command.arguments.contains("stream-json"))
+    }
+
+    /// Process arguments are readable by every process running as the same
+    /// user. The prompt carries the call transcript and the text of whatever
+    /// window is focused, so argv would publish a private conversation to the
+    /// whole machine.
+    func testThePromptNeverAppearsInTheArguments() {
+        let secret = "the customer said their password is hunter2"
+        let command = build(prompt: secret)
+
+        XCTAssertFalse(command.arguments.contains(secret))
+        XCTAssertFalse(command.arguments.joined(separator: " ").contains("hunter2"))
+        XCTAssertEqual(command.standardInput, secret)
+    }
+
+    func testCodexAlsoTakesThePromptOnStandardInput() {
+        let command = build(kind: .codex, prompt: "sensitive text")
+        XCTAssertFalse(command.arguments.contains("sensitive text"))
+        XCTAssertEqual(command.standardInput, "sensitive text")
+        // A bare dash tells it to read the prompt from standard input.
+        XCTAssertEqual(command.arguments.last, "-")
     }
 
     /// stream-json in print mode is rejected without --verbose, which would
@@ -109,10 +130,12 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertEqual(editing[editing.firstIndex(of: "--sandbox")! + 1], "workspace-write")
     }
 
-    /// A prompt starting with a dash must not be read as a flag.
-    func testCodexPutsThePromptLast() {
-        let arguments = build(kind: .codex, prompt: "--help me").arguments
-        XCTAssertEqual(arguments.last, "--help me")
+    /// A prompt starting with a dash cannot be mistaken for a flag when it
+    /// never reaches the argument list.
+    func testAPromptThatLooksLikeAFlagIsSafe() {
+        let command = build(kind: .codex, prompt: "--help me")
+        XCTAssertFalse(command.arguments.contains("--help me"))
+        XCTAssertEqual(command.standardInput, "--help me")
     }
 
     func testDefaultSystemPromptAsksForShortAnswers() {

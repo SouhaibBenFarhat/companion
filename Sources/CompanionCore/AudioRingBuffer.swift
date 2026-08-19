@@ -16,6 +16,13 @@ public final class AudioRingBuffer: @unchecked Sendable {
     private var writeIndex = 0
     private var available = 0
     private let lock = NSLock()
+    /// Host time of the oldest unread frame.
+    ///
+    /// Kept with the samples rather than beside them. Reading "the latest host
+    /// time" separately pairs a batch of audio with a timestamp from whatever
+    /// arrived next, which on a busy machine is a different moment entirely.
+    private var oldestHostTime: UInt64 = 0
+    private var framesPerSecond: Double = 0
 
     /// - Parameter capacity: in frames. A few hundred milliseconds is plenty;
     ///   more only adds latency between a word and its transcript.
@@ -41,10 +48,14 @@ public final class AudioRingBuffer: @unchecked Sendable {
     /// The lock here is uncontended in practice — the reader holds it for a
     /// memcpy — but a real audio thread should use atomics. Kept simple until
     /// a device shows it matters, and noted so the trade is visible.
-    public func write(_ samples: UnsafeBufferPointer<Float>) {
+    /// - Parameter hostTime: when the first frame in this batch was captured.
+    public func write(_ samples: UnsafeBufferPointer<Float>, hostTime: UInt64 = 0, sampleRate: Double = 0) {
         guard !samples.isEmpty else { return }
         lock.lock()
         defer { lock.unlock() }
+
+        if sampleRate > 0 { framesPerSecond = sampleRate }
+        if available == 0, hostTime > 0 { oldestHostTime = hostTime }
 
         // Anything beyond capacity would overwrite itself within this call.
         let incoming = samples.suffix(capacity)
@@ -62,8 +73,16 @@ public final class AudioRingBuffer: @unchecked Sendable {
         droppedFrames += dropped
     }
 
-    public func write(_ samples: [Float]) {
-        samples.withUnsafeBufferPointer { write($0) }
+    public func write(_ samples: [Float], hostTime: UInt64 = 0, sampleRate: Double = 0) {
+        samples.withUnsafeBufferPointer { write($0, hostTime: hostTime, sampleRate: sampleRate) }
+    }
+
+    /// Samples and the host time of the first of them, taken together.
+    public func drain(maximum: Int = .max) -> (samples: [Float], hostTime: UInt64) {
+        lock.lock()
+        let start = oldestHostTime
+        lock.unlock()
+        return (read(maximum: maximum), start)
     }
 
     /// Takes up to `maximum` frames, oldest first.
@@ -80,6 +99,10 @@ public final class AudioRingBuffer: @unchecked Sendable {
             output[offset] = storage[(start + offset) % capacity]
         }
         available -= count
+        if framesPerSecond > 0, oldestHostTime > 0 {
+            let consumed = Double(count) / framesPerSecond
+            oldestHostTime = oldestHostTime &+ UInt64(consumed * 1_000_000_000)
+        }
         return output
     }
 
@@ -89,5 +112,6 @@ public final class AudioRingBuffer: @unchecked Sendable {
         writeIndex = 0
         available = 0
         droppedFrames = 0
+        oldestHostTime = 0
     }
 }

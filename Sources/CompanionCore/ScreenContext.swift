@@ -63,6 +63,13 @@ public struct ScreenContext: Equatable, Sendable {
 /// file — and a path is enough, because the agent can read the file itself,
 /// which is both exact and free.
 public enum WindowTitleParser {
+    /// Folders never worth walking. A node_modules tree can be a hundred
+    /// thousand files, and the answer is never in there.
+    static let skippedDirectories: Set<String> = [
+        "node_modules", ".git", ".build", "dist", "build", "Pods",
+        ".next", ".venv", "venv", "target", "DerivedData", ".swiftpm",
+    ]
+
     /// Titles look like "file.swift — folder — Visual Studio Code" or
     /// "file.swift (Edited) — MyApp". Separators vary by app and by locale.
     private static let separators = [" — ", " – ", " - ", " | "]
@@ -117,7 +124,19 @@ public enum WindowTitleParser {
         ) else { return nil }
 
         var matches: [String] = []
-        for case let url as URL in walker where url.lastPathComponent == name {
+        var visited = 0
+        for case let url as URL in walker {
+            if skippedDirectories.contains(url.lastPathComponent) {
+                walker.skipDescendants()
+                continue
+            }
+            visited += 1
+            // A bound, so a huge repository cannot stall the reader. Giving up
+            // costs one piece of context; walking a million files costs the
+            // responsiveness of the whole panel.
+            if visited > 20_000 { return nil }
+
+            guard url.lastPathComponent == name else { continue }
             matches.append(url.path)
             // Two files with the same name means the title cannot tell them
             // apart, so nothing is better than the wrong one.

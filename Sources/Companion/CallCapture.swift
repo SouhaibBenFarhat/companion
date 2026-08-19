@@ -24,10 +24,20 @@ final class CallCapture {
     private(set) var callAppName: String?
 
     private let microphone = MicrophoneRecorder()
+    private let state = DispatchQueue(label: "companion.capture.state")
     private var tap: AnyObject?
+
+    /// The tap, read safely from the pump queue.
+    @available(macOS 14.4, *)
+    private var currentTap: ProcessTapRecorder? {
+        state.sync { tap as? ProcessTapRecorder }
+    }
     private var timeline = AudioTimeline(originHostTime: 0)
     private var pump: DispatchSourceTimer?
     private var listeners: [(AudioObjectPropertySelector, AudioObjectPropertyListenerBlock)] = []
+    /// addObserver(forName:) registers the returned token, not self, so keeping
+    /// it is the only way to remove the observer later.
+    private var configurationObserver: NSObjectProtocol?
     private var restartState = CaptureRestartPolicy.State()
     private let restartPolicy = CaptureRestartPolicy()
     private var settings = AwarenessSettings()
@@ -42,7 +52,7 @@ final class CallCapture {
     func start(settings: AwarenessSettings) {
         guard !isRunning else { return }
         self.settings = settings
-        timeline = AudioTimeline(originHostTime: mach_absolute_time())
+        timeline = AudioTimeline(originHostTime: mach_absolute_time(), clock: HostClock.current)
 
         if settings.captureMicrophone {
             do {
@@ -60,7 +70,7 @@ final class CallCapture {
             let recorder = ProcessTapRecorder()
             do {
                 try recorder.start()
-                tap = recorder
+                state.sync { tap = recorder }
                 callAppName = AudioProcessRegistry.likelyCallAppName()
             } catch {
                 report(error.localizedDescription)
@@ -79,13 +89,16 @@ final class CallCapture {
         pump = nil
 
         microphone?.stop()
-        if #available(macOS 14.4, *), let recorder = tap as? ProcessTapRecorder {
+        if #available(macOS 14.4, *), let recorder = currentTap {
             recorder.stop()
         }
-        tap = nil
+        state.sync { tap = nil }
 
         removeDeviceListeners()
-        NotificationCenter.default.removeObserver(self)
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
 
         isRunning = false
         callAppName = nil
@@ -114,33 +127,37 @@ final class CallCapture {
         var levels = Levels()
 
         if let microphone {
-            let samples = microphone.drain()
-            if !samples.isEmpty {
+            let batch = microphone.drain()
+            if !batch.samples.isEmpty {
                 let chunk = PCMChunk(
                     speaker: .me,
-                    hostTimeNanoseconds: microphone.latestHostTime,
+                    hostTimeNanoseconds: batch.hostTime,
                     sampleRate: microphone.targetFormat.sampleRate,
-                    samples: samples
+                    samples: batch.samples
                 )
                 levels.me = chunk.level
                 deliver(chunk)
             }
         }
 
-        if #available(macOS 14.4, *), let recorder = tap as? ProcessTapRecorder {
-            let samples = recorder.drain()
-            if !samples.isEmpty {
+        if #available(macOS 14.4, *), let recorder = currentTap {
+            let batch = recorder.drain()
+            if !batch.samples.isEmpty {
                 let chunk = PCMChunk(
                     speaker: .them,
-                    hostTimeNanoseconds: recorder.latestHostTime,
+                    hostTimeNanoseconds: batch.hostTime,
                     sampleRate: recorder.streamFormat?.sampleRate ?? 48_000,
-                    samples: samples
+                    samples: batch.samples
                 )
                 levels.them = chunk.level
                 deliver(chunk)
             }
         }
 
+        // Audio arriving is the only proof a rebuild worked.
+        if levels.me > 0 || levels.them > 0 {
+            restartPolicy.succeeded(state: &restartState)
+        }
         DispatchQueue.main.async { [weak self] in self?.onLevels?(levels) }
     }
 
@@ -179,7 +196,7 @@ final class CallCapture {
 
         // The engine has its own contract and will silently stop delivering
         // microphone buffers if this is ignored.
-        NotificationCenter.default.addObserver(
+        configurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: nil,
             queue: .main
@@ -223,7 +240,9 @@ final class CallCapture {
             let current = settings
             stop()
             start(settings: current)
-            restartPolicy.succeeded(state: &restartState)
+            // Deliberately not marking success here. Audio is not flowing yet,
+            // and clearing the counter now would let a device that keeps
+            // failing rebuild forever.
         }
     }
 

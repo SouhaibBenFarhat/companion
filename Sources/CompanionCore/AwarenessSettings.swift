@@ -12,6 +12,13 @@ public struct AwarenessSettings: Codable, Equatable, Sendable {
     public var captureSystemAudio: Bool
     /// Suppress the other person's voice leaking back through the microphone.
     public var echoCancellationEnabled: Bool
+    /// Whether Companion may speak without being asked.
+    ///
+    /// Separate from `enabled` and off by default. Listening is useful on its
+    /// own — the transcript is there and questions carry it — while a tool that
+    /// interrupts a live call with something obvious gets switched off after
+    /// one meeting. Earning the interruption comes second.
+    public var suggestionsEnabled: Bool
     /// How much conversation to keep in memory.
     public var transcriptWindowSeconds: Int
     /// Whether the transcript survives quitting.
@@ -25,6 +32,7 @@ public struct AwarenessSettings: Codable, Equatable, Sendable {
         captureMicrophone: Bool = true,
         captureSystemAudio: Bool = true,
         echoCancellationEnabled: Bool = true,
+        suggestionsEnabled: Bool = false,
         transcriptWindowSeconds: Int = 300,
         persistTranscript: Bool = false
     ) {
@@ -32,6 +40,7 @@ public struct AwarenessSettings: Codable, Equatable, Sendable {
         self.captureMicrophone = captureMicrophone
         self.captureSystemAudio = captureSystemAudio
         self.echoCancellationEnabled = echoCancellationEnabled
+        self.suggestionsEnabled = suggestionsEnabled
         self.transcriptWindowSeconds = transcriptWindowSeconds
         self.persistTranscript = persistTranscript
     }
@@ -46,6 +55,8 @@ public struct AwarenessSettings: Codable, Equatable, Sendable {
             ?? defaults.captureSystemAudio
         echoCancellationEnabled = try container.decodeIfPresent(Bool.self, forKey: .echoCancellationEnabled)
             ?? defaults.echoCancellationEnabled
+        suggestionsEnabled = try container.decodeIfPresent(Bool.self, forKey: .suggestionsEnabled)
+            ?? defaults.suggestionsEnabled
         transcriptWindowSeconds = try container.decodeIfPresent(Int.self, forKey: .transcriptWindowSeconds)
             ?? defaults.transcriptWindowSeconds
         persistTranscript = try container.decodeIfPresent(Bool.self, forKey: .persistTranscript)

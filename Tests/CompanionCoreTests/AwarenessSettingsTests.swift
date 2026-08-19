@@ -16,6 +16,18 @@ final class AwarenessSettingsTests: XCTestCase {
         XCTAssertFalse(AwarenessSettings().persistTranscript)
     }
 
+    /// Listening is useful on its own. Interrupting has to be asked for.
+    func testSpeakingUnpromptedIsOffByDefault() {
+        XCTAssertFalse(AwarenessSettings().suggestionsEnabled)
+    }
+
+    func testListeningAndSuggestingAreSeparateSwitches() {
+        var settings = AwarenessSettings()
+        settings.enabled = true
+        XCTAssertTrue(settings.enabled)
+        XCTAssertFalse(settings.suggestionsEnabled)
+    }
+
     func testBothSidesAreCapturedByDefault() {
         XCTAssertTrue(AwarenessSettings().capturesBothSides)
         XCTAssertTrue(AwarenessSettings().echoCancellationEnabled)
@@ -42,6 +54,7 @@ final class AwarenessSettingsTests: XCTestCase {
         XCTAssertTrue(settings.enabled)
         XCTAssertEqual(settings.transcriptWindowSeconds, AwarenessSettings().transcriptWindowSeconds)
         XCTAssertFalse(settings.persistTranscript)
+        XCTAssertFalse(settings.suggestionsEnabled)
     }
 
     /// A settings file written before any of this existed must still load.

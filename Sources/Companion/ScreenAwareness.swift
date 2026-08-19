@@ -23,6 +23,8 @@ final class ScreenAwareness {
     private var observer: AXObserver?
     private var observedApplication: AXUIElement?
     private var observedPID: pid_t = 0
+    /// addObserver(forName:) registers the returned token, not self.
+    private var workspaceObserver: NSObjectProtocol?
 
     private let debouncer = ContextDebouncer()
     private var debounceState = ContextDebouncer.State()
@@ -32,6 +34,34 @@ final class ScreenAwareness {
     /// How long to let one accessibility read take. Without a limit, a hung
     /// app hangs us with it.
     private static let messagingTimeout: Float = 0.25
+
+    /// Apps whose on-screen text Companion may read.
+    ///
+    /// An allowlist, not a blocklist. Reading whatever is focused in whatever
+    /// app is frontmost means capturing a password manager, a private message,
+    /// or a banking page into a prompt — and the only guard was a check for
+    /// secure text fields, which covers exactly one of those.
+    ///
+    /// Everything else still contributes its name and window title, so
+    /// Companion knows the user switched to Mail without reading the mail.
+    private static let textAllowedBundlePrefixes = [
+        "com.apple.dt.Xcode",
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92", // Cursor
+        "dev.zed.Zed",
+        "com.sublimetext",
+        "com.jetbrains",
+        "com.apple.Terminal",
+        "com.googlecode.iterm2",
+        "com.mitchellh.ghostty",
+        "net.kovidgoyal.kitty",
+        "com.github.wez.wezterm",
+    ]
+
+    static func allowsTextCapture(bundleIdentifier: String?) -> Bool {
+        guard let bundleIdentifier else { return false }
+        return textAllowedBundlePrefixes.contains { bundleIdentifier.hasPrefix($0) }
+    }
 
     init(repository: URL) {
         self.repository = repository
@@ -53,14 +83,22 @@ final class ScreenAwareness {
             guard let self else { return }
             self.runLoop = CFRunLoopGetCurrent()
 
-            NSWorkspace.shared.notificationCenter.addObserver(
+            // Delivered on this thread's run loop, not the poster's. Without
+            // the hop, attach() would add the observer's source to whatever run
+            // loop the notification happened to arrive on — usually main, which
+            // is the one thread accessibility reads must never block.
+            let loop = CFRunLoopGetCurrent()
+            self.workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didActivateApplicationNotification,
                 object: nil,
                 queue: nil
             ) { [weak self] notification in
                 guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
                     as? NSRunningApplication else { return }
-                self?.attach(to: app)
+                CFRunLoopPerformBlock(loop, CFRunLoopMode.defaultMode.rawValue) {
+                    self?.attach(to: app)
+                }
+                CFRunLoopWakeUp(loop)
             }
 
             if let front = NSWorkspace.shared.frontmostApplication { self.attach(to: front) }
@@ -81,7 +119,10 @@ final class ScreenAwareness {
         guard isRunning else { return }
         isRunning = false
 
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+            self.workspaceObserver = nil
+        }
         detach()
 
         thread?.cancel()
@@ -93,6 +134,8 @@ final class ScreenAwareness {
     // MARK: - Following the frontmost app
 
     private func attach(to app: NSRunningApplication) {
+        // A notification can arrive after stop().
+        guard isRunning else { return }
         detach()
         guard app.processIdentifier != getpid() else { return }
 
@@ -193,7 +236,10 @@ final class ScreenAwareness {
             context.filePath = WindowTitleParser.resolve(documentName: name, inRepository: repository)
         }
 
-        if let focused = copyElement(element, kAXFocusedUIElementAttribute) {
+        // Text only from editors and terminals. Everywhere else, the app and
+        // window name are as far as this goes.
+        if Self.allowsTextCapture(bundleIdentifier: app.bundleIdentifier),
+           let focused = copyElement(element, kAXFocusedUIElementAttribute) {
             // Never read a password field, whatever else is true. The role
             // constant is not exposed to Swift, so the literal is used — it is
             // stable and documented.

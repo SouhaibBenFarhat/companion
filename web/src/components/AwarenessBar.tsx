@@ -1,5 +1,5 @@
 import { send } from '../lib/bridge'
-import { Bar, Button, cx } from '../ui'
+import { Bar, Button, Toggle, cx } from '../ui'
 import type { Levels, ListeningState, TranscriptLine } from '../lib/types'
 
 /// A meter that reads like a voice, not like a number.
@@ -45,12 +45,16 @@ export function AwarenessBar({
   error,
   transcript,
   screen,
+  suggestionsEnabled,
+  onSuggestionsChange,
 }: {
   listening: ListeningState
   levels: Levels
   error: string
   transcript: TranscriptLine[]
   screen: string
+  suggestionsEnabled: boolean
+  onSuggestionsChange: (value: boolean) => void
 }) {
   if (!listening.active && !error) return null
 
@@ -68,14 +72,19 @@ export function AwarenessBar({
             {listening.callApp && (
               <span className="min-w-0 truncate text-[11px] text-muted">· {listening.callApp}</span>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto"
-              onClick={() => send({ type: 'toggleListening' })}
-            >
-              Stop
-            </Button>
+            {/* A switch belongs here and not in the composer row: it means
+                nothing unless Companion is listening, and this bar only exists
+                while it is. */}
+            <div className="ml-auto flex items-center gap-2">
+              <Toggle
+                label="Speak up"
+                checked={suggestionsEnabled}
+                onChange={onSuggestionsChange}
+              />
+              <Button variant="ghost" size="sm" onClick={() => send({ type: 'toggleListening' })}>
+                Stop
+              </Button>
+            </div>
           </div>
 
           <div className="mt-2 flex items-end gap-3">
