@@ -115,6 +115,35 @@ final class AgentLocatorTests: XCTestCase {
         XCTAssertTrue(AgentLocator.defaultSearchPaths.contains("/usr/local/bin"))
     }
 
+    // MARK: - Version managers
+
+    /// Newest wins, and a plain string sort would put v9 above v22.
+    func testVersionOrderingIsNumericNotAlphabetical() {
+        XCTAssertTrue(AgentLocator.isNewer("v22.22.3", than: "v22.21.1"))
+        XCTAssertTrue(AgentLocator.isNewer("v22.0.0", than: "v9.99.99"))
+        XCTAssertTrue(AgentLocator.isNewer("v18.20.8", than: "v18.20.7"))
+        XCTAssertFalse(AgentLocator.isNewer("v18.20.8", than: "v22.0.0"))
+    }
+
+    func testVersionOrderingHandlesUnevenLengths() {
+        XCTAssertTrue(AgentLocator.isNewer("v22.1", than: "v22"))
+        XCTAssertFalse(AgentLocator.isNewer("v22", than: "v22.1"))
+    }
+
+    /// The gap that hid a working Codex install: fnm puts the copy on your
+    /// PATH inside a per-shell folder no other process can see, so only the
+    /// real versioned directory is findable from an app.
+    func testVersionedRootsCoverTheCommonManagers() {
+        let roots = AgentLocator.versionedRoots.map(\.root)
+        XCTAssertTrue(roots.contains("~/.local/share/fnm/node-versions"))
+        XCTAssertTrue(roots.contains("~/.nvm/versions/node"))
+    }
+
+    func testVersionedRootsPointAtTheBinFolder() {
+        let fnm = AgentLocator.versionedRoots.first { $0.root.contains("fnm") }
+        XCTAssertEqual(fnm?.binSuffix, "installation/bin")
+    }
+
     // MARK: - PATH handed to the child process
 
     func testSearchPathValueExpandsTildes() {

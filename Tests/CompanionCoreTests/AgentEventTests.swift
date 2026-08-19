@@ -55,6 +55,47 @@ final class AgentEventTests: XCTestCase {
         )
     }
 
+    // MARK: - Streaming word by word
+
+    func testReadsATextDelta() {
+        let line = #"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"1,"}}}"#
+        XCTAssertEqual(
+            AgentEventDecoder.decode(line: line, kind: .claude, partialMessages: true),
+            [.assistantText("1,")]
+        )
+    }
+
+    /// With partials on, the finished text arrives again as a whole assistant
+    /// message. Taking both would print every answer twice.
+    func testIgnoresTheCompleteMessageWhenStreaming() {
+        let line = #"{"type":"assistant","message":{"content":[{"type":"text","text":"1, 2, 3"}]}}"#
+        XCTAssertTrue(AgentEventDecoder.decode(line: line, kind: .claude, partialMessages: true).isEmpty)
+    }
+
+    /// Tool use is not in the deltas, so it still has to come from the
+    /// complete message even while streaming.
+    func testStillReportsToolUseWhenStreaming() {
+        let line = #"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}"#
+        XCTAssertEqual(
+            AgentEventDecoder.decode(line: line, kind: .claude, partialMessages: true),
+            [.toolUse(name: "Read")]
+        )
+    }
+
+    /// Without partials the whole message is the only copy of the answer.
+    func testUsesTheCompleteMessageWhenNotStreaming() {
+        let line = #"{"type":"assistant","message":{"content":[{"type":"text","text":"1, 2, 3"}]}}"#
+        XCTAssertEqual(
+            AgentEventDecoder.decode(line: line, kind: .claude, partialMessages: false),
+            [.assistantText("1, 2, 3")]
+        )
+    }
+
+    func testIgnoresNonTextDeltas() {
+        let line = #"{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"}}}"#
+        XCTAssertTrue(AgentEventDecoder.decode(line: line, kind: .claude, partialMessages: true).isEmpty)
+    }
+
     // MARK: - Codex
 
     func testCodexReportsItsThreadAsTheSession() {

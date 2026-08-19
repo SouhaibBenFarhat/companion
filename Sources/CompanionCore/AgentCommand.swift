@@ -109,7 +109,16 @@ public enum AgentCommandBuilder {
     ) -> [String] {
         // `--verbose` is required alongside stream-json in print mode, otherwise
         // the CLI refuses to start and we get an empty panel with no reason.
-        var arguments = ["-p", prompt, "--output-format", "stream-json", "--verbose"]
+        //
+        // `--include-partial-messages` is what makes the answer appear a word
+        // at a time instead of landing in one block at the end. Without it a
+        // ten-second answer is ten seconds of nothing followed by a wall.
+        var arguments = [
+            "-p", prompt,
+            "--output-format", "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+        ]
 
         if let sessionID, !sessionID.isEmpty {
             arguments += ["--resume", sessionID]

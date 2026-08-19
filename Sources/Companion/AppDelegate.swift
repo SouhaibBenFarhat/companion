@@ -12,6 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before anything else: an accessory app never draws a menu bar, but
+        // AppKit still routes ⌘A/⌘C/⌘V/⌘Z through it. Without this, editing
+        // shortcuts are dead in every field.
+        MainMenu.install(into: NSApplication.shared)
+
         let settings = settingsStore.load()
 
         panelController = PanelController(
