@@ -4,6 +4,7 @@ import { MessageList } from './components/MessageList'
 import { Composer } from './components/Composer'
 import { HistoryMenu } from './components/HistoryMenu'
 import { SettingsSheet } from './components/SettingsSheet'
+import { AwarenessBar, StartListening } from './components/AwarenessBar'
 import { listen, send } from './lib/bridge'
 import { useTypewriter } from './lib/useTypewriter'
 import type { StatePayload } from './lib/types'
@@ -24,6 +25,8 @@ export function App() {
   const [showHistory, setShowHistory] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [focusToken, setFocusToken] = useState(0)
+  const [levels, setLevels] = useState({ me: 0, them: 0 })
+  const [captureError, setCaptureError] = useState('')
 
   useEffect(() => {
     const stop = listen((payload) => {
@@ -31,6 +34,7 @@ export function App() {
         case 'state':
           setState(payload)
           setBusy(payload.busy)
+          if (payload.listening.active) setCaptureError('')
           // The finished answer now lives in `messages`; keeping the streamed
           // copy too would show it twice.
           resetStreaming()
@@ -63,6 +67,15 @@ export function App() {
           break
         case 'focus':
           setFocusToken((token) => token + 1)
+          break
+        case 'levels':
+          setLevels({ me: payload.me, them: payload.them })
+          break
+        case 'captureError':
+          setCaptureError(payload.message)
+          break
+        case 'openSettings':
+          setShowSettings(true)
           break
       }
     })
@@ -97,6 +110,8 @@ export function App() {
         onSettings={() => setShowSettings((open) => !open)}
       />
 
+      <AwarenessBar listening={state.listening} levels={levels} error={captureError} />
+
       {showSettings ? (
         <SettingsSheet
           settings={state.settings}
@@ -117,6 +132,11 @@ export function App() {
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
           />
+          {!state.listening.active && (
+            <div className="shrink-0 px-2.5 pt-2">
+              <StartListening canListen={state.permissions.canListen} />
+            </div>
+          )}
           <Composer busy={busy} disabled={!state.agent.found} focusToken={focusToken} />
         </>
       )}

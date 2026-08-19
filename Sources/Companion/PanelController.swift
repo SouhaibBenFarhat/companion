@@ -11,6 +11,7 @@ final class PanelController: NSObject {
     private let panel: ChatPanel
     private let webView: WKWebView
     private let runner = AgentRunner()
+    private let capture = CallCapture()
 
     private var settings: Settings
     private let settingsStore: JSONFileStore<Settings>
@@ -91,6 +92,17 @@ final class PanelController: NSObject {
         backdrop.addSubview(webView)
         panel.delegate = self
 
+        capture.onLevels = { [weak self] levels in
+            // Its own message, never through `state` — the page resets the
+            // streamed answer on every state payload, so routing levels there
+            // would wipe a half-drawn reply each time somebody spoke.
+            self?.send(["type": "levels", "me": levels.me, "them": levels.them])
+        }
+        capture.onError = { [weak self] message in
+            self?.send(["type": "captureError", "message": message])
+            self?.stopListening()
+        }
+
         load()
     }
 
@@ -169,6 +181,43 @@ final class PanelController: NSObject {
         }
     }
 
+    // MARK: - Listening
+
+    var isListening: Bool { capture.isRunning }
+    var onListeningChanged: (() -> Void)?
+
+    func toggleListening() {
+        isListening ? stopListening() : startListening()
+    }
+
+    func startListening() {
+        let permissions = PermissionChecker.report()
+        guard permissions.canListen else {
+            send(["type": "captureError", "message": permissions.summary])
+            showSettingsTab()
+            return
+        }
+
+        settings.awareness.enabled = true
+        persistSettings()
+        capture.start(settings: settings.awareness)
+        onListeningChanged?()
+        sendState()
+    }
+
+    func stopListening() {
+        capture.stop()
+        settings.awareness.enabled = false
+        persistSettings()
+        onListeningChanged?()
+        sendState()
+    }
+
+    private func showSettingsTab() {
+        show()
+        send(["type": "openSettings"])
+    }
+
     // MARK: - State
 
     private func sendState() {
@@ -204,6 +253,10 @@ final class PanelController: NSObject {
                 "systemPrompt": settings.systemPrompt,
             ],
             "repository": settings.repositoryURL().path,
+            "listening": [
+                "active": capture.isRunning,
+                "callApp": capture.callAppName ?? "",
+            ],
             "permissions": [
                 "canListen": permissions.canListen,
                 "canSeeScreen": permissions.canSeeScreen,
@@ -419,6 +472,9 @@ extension PanelController: WKScriptMessageHandler {
         case "openPermissionSettings":
             guard let raw = body["id"] as? String, let permission = Permission(rawValue: raw) else { return }
             PermissionChecker.openSettings(for: permission)
+
+        case "toggleListening":
+            toggleListening()
 
         case "refreshPermissions":
             // Cheap, and the only way to notice a grant made in System Settings

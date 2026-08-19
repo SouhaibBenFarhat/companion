@@ -52,6 +52,17 @@ export interface Permissions {
   items: PermissionItem[]
 }
 
+export interface Levels {
+  me: number
+  them: number
+}
+
+export interface ListeningState {
+  active: boolean
+  /** Best guess at which app the call is in, may be empty. */
+  callApp: string
+}
+
 export interface StatePayload {
   type: 'state'
   busy: boolean
@@ -59,6 +70,7 @@ export interface StatePayload {
   settings: SettingsPayload
   repository: string
   permissions: Permissions
+  listening: ListeningState
   currentId: string
   conversations: ConversationSummary[]
   messages: Msg[]
@@ -72,6 +84,9 @@ export type Incoming =
   | { type: 'busy'; busy: boolean }
   | { type: 'done'; isError: boolean; message: string; code?: string }
   | { type: 'focus' }
+  | { type: 'levels'; me: number; them: number }
+  | { type: 'captureError'; message: string }
+  | { type: 'openSettings' }
 
 /** Everything the page can ask Swift to do. */
 export type Outgoing =
@@ -87,5 +102,6 @@ export type Outgoing =
   | { type: 'requestPermission'; id: PermissionId }
   | { type: 'openPermissionSettings'; id: PermissionId }
   | { type: 'refreshPermissions' }
+  | { type: 'toggleListening' }
   | { type: 'drag'; dx: number; dy: number }
   | { type: 'updateSettings'; agent?: string; agentPath?: string; permission?: string; systemPrompt?: string }
