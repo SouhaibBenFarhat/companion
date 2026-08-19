@@ -24,7 +24,16 @@ public enum AgentEvent: Equatable, Sendable {
 /// throwing. These formats change between CLI releases, and a panel that goes
 /// blank because of one unrecognised line would be worse than one that skips it.
 public enum AgentEventDecoder {
-    public static func decode(line: String, kind: AgentKind) -> [AgentEvent] {
+    /// - Parameter partialMessages: whether the run was started with
+    ///   `--include-partial-messages`. It changes which lines carry the answer:
+    ///   with partials on, the text arrives as deltas AND again as a complete
+    ///   assistant message at the end, so one of the two has to be ignored or
+    ///   every answer appears twice.
+    public static func decode(
+        line: String,
+        kind: AgentKind,
+        partialMessages: Bool = false
+    ) -> [AgentEvent] {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { return [] }
         guard let object = try? JSONSerialization.jsonObject(with: data),
@@ -32,17 +41,28 @@ public enum AgentEventDecoder {
         else { return [] }
 
         switch kind {
-        case .claude: return decodeClaude(json)
+        case .claude: return decodeClaude(json, partialMessages: partialMessages)
         case .codex: return decodeCodex(json)
         }
     }
 
     // MARK: - Claude Code
 
-    private static func decodeClaude(_ json: [String: Any]) -> [AgentEvent] {
+    private static func decodeClaude(_ json: [String: Any], partialMessages: Bool) -> [AgentEvent] {
         let type = json["type"] as? String
 
         switch type {
+        case "stream_event":
+            guard partialMessages,
+                  let event = json["event"] as? [String: Any],
+                  event["type"] as? String == "content_block_delta",
+                  let delta = event["delta"] as? [String: Any],
+                  delta["type"] as? String == "text_delta",
+                  let text = delta["text"] as? String,
+                  !text.isEmpty
+            else { return [] }
+            return [.assistantText(text)]
+
         case "system":
             guard json["subtype"] as? String == "init",
                   let id = json["session_id"] as? String
@@ -56,6 +76,9 @@ public enum AgentEventDecoder {
             return content.compactMap { block in
                 switch block["type"] as? String {
                 case "text":
+                    // Already delivered word by word; taking it again would
+                    // repeat the whole answer under itself.
+                    guard !partialMessages else { return nil }
                     guard let text = block["text"] as? String, !text.isEmpty else { return nil }
                     return .assistantText(text)
                 case "tool_use":

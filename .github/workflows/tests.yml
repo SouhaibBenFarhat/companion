@@ -43,3 +43,21 @@ jobs:
       # The panel is empty without these, and nothing else would notice.
       - name: Check the interface made it into the bundle
         run: test -f dist/Companion.app/Contents/Resources/web/index.html
+
+      # A missing usage description does not warn — macOS terminates the app
+      # the first time it touches the microphone, with nothing pointing at why.
+      - name: Check the permission usage descriptions are present
+        run: |
+          PLIST=dist/Companion.app/Contents/Info.plist
+          for key in NSMicrophoneUsageDescription NSSpeechRecognitionUsageDescription; do
+            value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" 2>/dev/null || true)
+            if [ -z "$value" ]; then
+              echo "::error::$key is missing from Info.plist"
+              exit 1
+            fi
+            if [ "${#value}" -lt 20 ]; then
+              echo "::error::$key is too short to explain anything: $value"
+              exit 1
+            fi
+            echo "ok  $key"
+          done

@@ -14,7 +14,19 @@ let package = Package(
         .executableTarget(
             name: "Companion",
             dependencies: ["CompanionCore"],
-            path: "Sources/Companion"
+            path: "Sources/Companion",
+            linkerSettings: [
+                // Embeds Info.plist into the bare `swift run` binary. Without
+                // this there is no usage description in development, and macOS
+                // terminates the process the first time it asks for the
+                // microphone — with no error that points at the cause.
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "packaging/Info.plist",
+                ])
+            ]
         ),
         .testTarget(
             name: "CompanionCoreTests",

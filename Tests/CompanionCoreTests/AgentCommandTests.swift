@@ -40,6 +40,12 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertTrue(build().arguments.contains("--verbose"))
     }
 
+    /// Without this the answer lands in one block at the end instead of
+    /// appearing as it is written.
+    func testClaudeAsksForPartialMessages() {
+        XCTAssertTrue(build().arguments.contains("--include-partial-messages"))
+    }
+
     func testClaudeOmitsResumeForANewConversation() {
         XCTAssertFalse(build(sessionID: nil).arguments.contains("--resume"))
         XCTAssertFalse(build(sessionID: "").arguments.contains("--resume"))

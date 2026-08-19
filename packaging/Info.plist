@@ -28,6 +28,16 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Companion listens to your side of a call so it can follow the conversation. Audio is transcribed on this Mac and never uploaded.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Companion turns call audio into text on this Mac so it can answer questions about what was said. Nothing is sent to Apple.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Companion reads the repo you point it at, which may live on your Desktop.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Companion reads the repo you point it at, which may live in Documents.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Companion reads the repo you point it at, which may live in Downloads.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Souhaib Ben Farhat. MIT License.</string>
 </dict>

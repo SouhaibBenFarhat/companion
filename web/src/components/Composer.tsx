@@ -1,5 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { send } from '../lib/bridge'
+import { send, startDrag } from '../lib/bridge'
+import { Bar, Button, Hint, IconButton } from '../ui'
+import { SendIcon, iconStroke } from '../ui/icons'
+
+/** Roughly three lines at rest, eight before it scrolls. */
+const MIN_HEIGHT = 58
+const MAX_HEIGHT = 200
 
 export function Composer({
   busy,
@@ -17,12 +23,11 @@ export function Composer({
     input.current?.focus()
   }, [focusToken, busy])
 
-  // Grow with the text, up to a point — a tall input would eat the answer.
   const resize = () => {
     const element = input.current
     if (!element) return
     element.style.height = 'auto'
-    element.style.height = `${Math.min(element.scrollHeight, 140)}px`
+    element.style.height = `${Math.min(Math.max(element.scrollHeight, MIN_HEIGHT), MAX_HEIGHT)}px`
   }
 
   const submit = () => {
@@ -37,11 +42,13 @@ export function Composer({
   }
 
   return (
-    <div className="shrink-0 border-t border-line p-2">
-      <div className="flex items-end gap-2 rounded-xl border border-line bg-raised px-2.5 py-1.5">
+    <Bar edge="top" className="p-2.5">
+      {/* A recessed well, not another raised surface: the field reads as a hole
+          in the chrome rather than a card sitting on it. */}
+      <div className="rounded-xl border border-line-strong bg-input px-3 pb-2 pt-2.5 transition-colors focus-within:border-accent focus-within:bg-input-focus">
         <textarea
           ref={input}
-          rows={1}
+          rows={3}
           disabled={disabled}
           onInput={resize}
           onKeyDown={(event) => {
@@ -51,35 +58,32 @@ export function Composer({
             }
           }}
           placeholder={disabled ? 'No agent found' : 'Ask about this repo…'}
-          className="selectable max-h-[140px] min-h-[20px] flex-1 resize-none bg-transparent leading-snug text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed"
+          style={{ minHeight: MIN_HEIGHT, maxHeight: MAX_HEIGHT }}
+          className="selectable block w-full resize-none bg-transparent text-[13px] leading-relaxed text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed"
         />
 
-        {busy ? (
-          <button
-            type="button"
-            onClick={() => send({ type: 'cancel' })}
-            className="shrink-0 rounded-md px-2 py-0.5 text-[12px] text-muted transition-colors hover:bg-overlay hover:text-ink"
-          >
-            Stop
-          </button>
-        ) : (
-          <button
-            type="button"
+        {/* Actions on their own row, so growing text never squeezes them. */}
+        <div className="flex items-center justify-end gap-1.5 pt-1">
+          {busy && (
+            <Button variant="ghost" size="sm" onClick={() => send({ type: 'cancel' })}>
+              Stop
+            </Button>
+          )}
+          <IconButton
+            label="Send"
+            disabled={disabled || busy}
             onClick={submit}
-            disabled={disabled}
-            aria-label="Send"
-            className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="bg-accent text-accent-fg hover:bg-accent-hover hover:text-accent-fg active:brightness-90"
           >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M8 12.5v-9M4 7.5L8 3.5l4 4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
+            <SendIcon size={15} strokeWidth={iconStroke} />
+          </IconButton>
+        </div>
       </div>
 
-      <p className="px-1 pt-1 text-[11px] text-muted">
+      {/* Dead space otherwise, so it earns its keep as a second grab area. */}
+      <Hint onMouseDown={(e) => startDrag(e)} className="cursor-grab px-1 pt-1.5 active:cursor-grabbing">
         Enter to send · Shift+Enter for a new line · Esc to hide
-      </p>
-    </div>
+      </Hint>
+    </Bar>
   )
 }

@@ -1,30 +1,44 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
+import { Button, Notice, Pulse, Surface } from '../ui'
+import { send } from '../lib/bridge'
 import type { Msg } from '../lib/types'
+
+function Answer({ text }: { text: string }) {
+  return (
+    <Surface level="card" className="px-3 py-2.5">
+      <Markdown text={text} />
+    </Surface>
+  )
+}
 
 function Bubble({ message }: { message: Msg }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="selectable max-w-[85%] rounded-xl rounded-br-sm bg-accent px-3 py-1.5 text-accent-fg break-words whitespace-pre-wrap">
+        <div className="selectable max-w-[85%] rounded-xl bg-accent px-3 py-2 font-medium break-words whitespace-pre-wrap text-accent-fg">
           {message.text}
         </div>
       </div>
     )
   }
-
-  return (
-    <div className="rounded-xl rounded-bl-sm border border-line bg-raised px-3 py-2">
-      <Markdown text={message.text} />
-    </div>
-  )
+  return <Answer text={message.text} />
 }
 
 function Working({ tool }: { tool: string | null }) {
+  const [seconds, setSeconds] = useState(0)
+
+  // A bare "Thinking" gives no way to tell a slow answer from a hung one.
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds((s) => s + 1), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
   return (
-    <div className="flex items-center gap-2 px-1 text-[12px] text-muted">
-      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-      {tool ? `Reading — ${tool}` : 'Thinking'}
+    <div className="flex items-center gap-2 px-1 py-0.5 text-[12px] text-muted">
+      <Pulse />
+      <span>{tool ? `Reading — ${tool}` : 'Thinking'}</span>
+      {seconds > 2 && <span className="tabular-nums opacity-70">{seconds}s</span>}
     </div>
   )
 }
@@ -35,6 +49,7 @@ export function MessageList({
   busy,
   tool,
   error,
+  errorCode,
   agentFound,
   agentTitle,
 }: {
@@ -43,6 +58,7 @@ export function MessageList({
   busy: boolean
   tool: string | null
   error: string
+  errorCode: string
   agentFound: boolean
   agentTitle: string
 }) {
@@ -56,37 +72,42 @@ export function MessageList({
   const empty = messages.length === 0 && !streaming && !busy
 
   return (
-    <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+    <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
       {!agentFound && (
-        <div className="rounded-lg border border-line bg-raised px-3 py-2 text-[12px] text-muted">
-          <span className="text-danger">{agentTitle} was not found.</span> Install it, or set the
-          path in Settings. Companion drives the CLI you already signed in to, so there is no API
-          key to add.
-        </div>
+        <Notice tone="danger">
+          {agentTitle} was not found. Install it, or set the path in Settings. Companion drives the
+          CLI you already signed in to, so there is no API key to add.
+        </Notice>
       )}
 
       {empty && agentFound && (
-        <div className="px-1 py-6 text-[12px] text-muted">
+        <p className="px-1 py-6 text-[12px] leading-relaxed text-muted">
           Ask about the code in this repo. Answers stay on your screen and never reach a shared one.
-        </div>
+        </p>
       )}
 
       {messages.map((message) => (
         <Bubble key={message.id} message={message} />
       ))}
 
-      {streaming && (
-        <div className="rounded-xl rounded-bl-sm border border-line bg-raised px-3 py-2">
-          <Markdown text={streaming} />
-        </div>
-      )}
-
+      {streaming && <Answer text={streaming} />}
       {busy && !streaming && <Working tool={tool} />}
-
       {error && (
-        <div className="selectable rounded-lg border border-line bg-raised px-3 py-2 text-[12px] text-danger break-words">
-          {error}
-        </div>
+        <Notice tone="danger">
+          <p>{error}</p>
+          {/* Signing in only happens in the CLI's interactive session, so the
+              button opens a terminal there rather than pretending to do it. */}
+          {errorCode === 'expiredLogin' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-2"
+              onClick={() => send({ type: 'signIn' })}
+            >
+              Open terminal to sign in
+            </Button>
+          )}
+        </Notice>
       )}
 
       <div ref={bottom} />
