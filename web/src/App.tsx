@@ -7,7 +7,7 @@ import { SettingsSheet } from './components/SettingsSheet'
 import { AwarenessBar, StartListening } from './components/AwarenessBar'
 import { listen, send } from './lib/bridge'
 import { useTypewriter } from './lib/useTypewriter'
-import type { StatePayload } from './lib/types'
+import type { StatePayload, Suggestion, TranscriptLine } from './lib/types'
 
 export function App() {
   const [state, setState] = useState<StatePayload | null>(null)
@@ -27,6 +27,9 @@ export function App() {
   const [focusToken, setFocusToken] = useState(0)
   const [levels, setLevels] = useState({ me: 0, them: 0 })
   const [captureError, setCaptureError] = useState('')
+  const [transcript, setTranscript] = useState<TranscriptLine[]>([])
+  const [screen, setScreen] = useState('')
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
 
   useEffect(() => {
     const stop = listen((payload) => {
@@ -77,6 +80,15 @@ export function App() {
         case 'openSettings':
           setShowSettings(true)
           break
+        case 'transcript':
+          setTranscript(payload.entries)
+          break
+        case 'screen':
+          setScreen([payload.app, payload.detail].filter(Boolean).join(' · '))
+          break
+        case 'suggestion':
+          setSuggestion({ text: payload.text, reason: payload.reason })
+          break
       }
     })
 
@@ -110,7 +122,13 @@ export function App() {
         onSettings={() => setShowSettings((open) => !open)}
       />
 
-      <AwarenessBar listening={state.listening} levels={levels} error={captureError} />
+      <AwarenessBar
+        listening={state.listening}
+        levels={levels}
+        error={captureError}
+        transcript={transcript}
+        screen={screen}
+      />
 
       {showSettings ? (
         <SettingsSheet
@@ -131,6 +149,8 @@ export function App() {
             errorCode={errorCode}
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
+            suggestion={suggestion}
+            onDismissSuggestion={() => setSuggestion(null)}
           />
           {!state.listening.active && (
             <div className="shrink-0 px-2.5 pt-2">

@@ -63,6 +63,20 @@ export interface ListeningState {
   callApp: string
 }
 
+export interface TranscriptLine {
+  id: string
+  speaker: 'me' | 'them'
+  who: string
+  text: string
+  /** Still being revised by the recogniser. */
+  live: boolean
+}
+
+export interface Suggestion {
+  text: string
+  reason: string
+}
+
 export interface StatePayload {
   type: 'state'
   busy: boolean
@@ -87,6 +101,9 @@ export type Incoming =
   | { type: 'levels'; me: number; them: number }
   | { type: 'captureError'; message: string }
   | { type: 'openSettings' }
+  | { type: 'transcript'; entries: TranscriptLine[] }
+  | { type: 'screen'; app: string; detail: string }
+  | { type: 'suggestion'; text: string; reason: string }
 
 /** Everything the page can ask Swift to do. */
 export type Outgoing =

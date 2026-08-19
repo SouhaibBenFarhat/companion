@@ -11,7 +11,10 @@ final class PanelController: NSObject {
     private let panel: ChatPanel
     private let webView: WKWebView
     private let runner = AgentRunner()
-    private let capture = CallCapture()
+    private let awareness = AwarenessCoordinator()
+    /// Separate from `runner`, so a suggestion Companion decided to make on its
+    /// own can never cancel an answer the user actually asked for.
+    private let suggestionRunner = AgentRunner()
 
     private var settings: Settings
     private let settingsStore: JSONFileStore<Settings>
@@ -92,15 +95,42 @@ final class PanelController: NSObject {
         backdrop.addSubview(webView)
         panel.delegate = self
 
-        capture.onLevels = { [weak self] levels in
+        awareness.onLevels = { [weak self] levels in
             // Its own message, never through `state` — the page resets the
             // streamed answer on every state payload, so routing levels there
             // would wipe a half-drawn reply each time somebody spoke.
             self?.send(["type": "levels", "me": levels.me, "them": levels.them])
         }
-        capture.onError = { [weak self] message in
+        awareness.onError = { [weak self] message in
             self?.send(["type": "captureError", "message": message])
-            self?.stopListening()
+        }
+        awareness.onTranscript = { [weak self] transcript in
+            self?.send([
+                "type": "transcript",
+                "entries": transcript.entries.suffix(60).map { entry in
+                    [
+                        "id": entry.id,
+                        "speaker": entry.speaker.rawValue,
+                        "who": entry.speaker.title,
+                        "text": entry.text,
+                        "live": entry.isVolatile,
+                    ]
+                },
+            ])
+        }
+        awareness.onStateChanged = { [weak self] in
+            self?.onListeningChanged?()
+            self?.sendState()
+        }
+        awareness.onScreen = { [weak self] context in
+            self?.send([
+                "type": "screen",
+                "app": context.appName,
+                "detail": context.filePath ?? context.url ?? context.windowTitle ?? "",
+            ])
+        }
+        awareness.onTrigger = { [weak self] reason, line in
+            self?.considerSpeaking(reason: reason, line: line)
         }
 
         load()
@@ -183,7 +213,7 @@ final class PanelController: NSObject {
 
     // MARK: - Listening
 
-    var isListening: Bool { capture.isRunning }
+    var isListening: Bool { awareness.isListening }
     var onListeningChanged: (() -> Void)?
 
     func toggleListening() {
@@ -200,17 +230,59 @@ final class PanelController: NSObject {
 
         settings.awareness.enabled = true
         persistSettings()
-        capture.start(settings: settings.awareness)
-        onListeningChanged?()
-        sendState()
+        awareness.start(settings: settings.awareness)
     }
 
     func stopListening() {
-        capture.stop()
+        awareness.stop()
         settings.awareness.enabled = false
         persistSettings()
-        onListeningChanged?()
-        sendState()
+    }
+
+    /// Something happened worth thinking about. Ask the agent, and show the
+    /// answer only if it is worth interrupting for.
+    private func considerSpeaking(reason: TurnReason, line: String) {
+        guard settings.awareness.enabled, !runner.isRunning else { return }
+        guard let executable = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)
+        else { return }
+
+        let spoken = awareness.transcript.text(lastSeconds: 120)
+        let screen = awareness.screenContext?.summary ?? ""
+        let prompt = AwarenessPrompt.build(
+            question: "The last thing said was: \"\(line)\"",
+            conversation: spoken,
+            screen: screen
+        )
+
+        let command = AgentCommandBuilder.build(
+            kind: settings.agent,
+            executable: executable,
+            prompt: prompt,
+            workingDirectory: settings.repositoryURL(),
+            sessionID: nil,
+            systemPrompt: AwarenessPrompt.watchingInstruction,
+            permission: .readOnly
+        )
+
+        var answer = ""
+        SessionLog.shared.write("suggest", "thinking, reason=\(reason.rawValue)")
+        suggestionRunner.run(
+            command: command,
+            kind: settings.agent,
+            onEvent: { event in
+                if case .assistantText(let chunk) = event { answer += chunk }
+            },
+            onFinish: { [weak self] _, _ in
+                guard let self else { return }
+                let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard self.awareness.admitSuggestion(text) else { return }
+                self.send([
+                    "type": "suggestion",
+                    "text": text,
+                    "reason": reason.rawValue,
+                ])
+            }
+        )
     }
 
     private func showSettingsTab() {
@@ -254,8 +326,8 @@ final class PanelController: NSObject {
             ],
             "repository": settings.repositoryURL().path,
             "listening": [
-                "active": capture.isRunning,
-                "callApp": capture.callAppName ?? "",
+                "active": awareness.isListening,
+                "callApp": awareness.callAppName ?? "",
             ],
             "permissions": [
                 "canListen": permissions.canListen,
@@ -308,10 +380,17 @@ final class PanelController: NSObject {
         sendState()
 
         pendingAnswer = ""
+        // Only what the agent has not been given yet. Resending the whole
+        // transcript each turn would grow every question without adding
+        // anything, since the session already remembers what it was told.
+        let spoken = awareness.isListening ? awareness.transcript.unsentText() : ""
+        let prompt = AwarenessPrompt.build(question: question, conversation: spoken)
+        if !spoken.isEmpty { awareness.markTranscriptSent() }
+
         let command = AgentCommandBuilder.build(
             kind: settings.agent,
             executable: executable,
-            prompt: question,
+            prompt: prompt,
             workingDirectory: settings.repositoryURL(),
             sessionID: current.agentSessionID,
             systemPrompt: settings.systemPrompt,
@@ -405,6 +484,7 @@ final class PanelController: NSObject {
 
         settings.defaultRepositoryPath = url.path
         persistSettings()
+        awareness.updateRepository(url)
         current = conversations.forRepository(url.path).first
             ?? Conversation(repositoryPath: url.path, agent: settings.agent)
         sendState()

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
 import { Button, Notice, Pulse, Surface } from '../ui'
 import { send } from '../lib/bridge'
-import type { Msg } from '../lib/types'
+import type { Msg, Suggestion } from '../lib/types'
 
 function Answer({ text }: { text: string }) {
   return (
@@ -52,6 +52,8 @@ export function MessageList({
   errorCode,
   agentFound,
   agentTitle,
+  suggestion,
+  onDismissSuggestion,
 }: {
   messages: Msg[]
   streaming: string
@@ -61,6 +63,8 @@ export function MessageList({
   errorCode: string
   agentFound: boolean
   agentTitle: string
+  suggestion: Suggestion | null
+  onDismissSuggestion: () => void
 }) {
   const bottom = useRef<HTMLDivElement>(null)
 
@@ -89,6 +93,27 @@ export function MessageList({
       {messages.map((message) => (
         <Bubble key={message.id} message={message} />
       ))}
+
+      {/* Marked apart from answers you asked for. Something that arrived
+          unprompted has to be visibly different, or it reads as a reply to a
+          question you never asked. */}
+      {suggestion && (
+        <Surface level="card" className="border-l-2 border-accent px-3 py-2.5">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-text">
+              Noticed
+            </span>
+            <button
+              type="button"
+              onClick={onDismissSuggestion}
+              className="ml-auto text-[11px] text-muted transition-colors hover:text-ink"
+            >
+              Dismiss
+            </button>
+          </div>
+          <Markdown text={suggestion.text} />
+        </Surface>
+      )}
 
       {streaming && <Answer text={streaming} />}
       {busy && !streaming && <Working tool={tool} />}

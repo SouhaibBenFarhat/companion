@@ -1,6 +1,6 @@
 import { send } from '../lib/bridge'
 import { Bar, Button, cx } from '../ui'
-import type { Levels, ListeningState } from '../lib/types'
+import type { Levels, ListeningState, TranscriptLine } from '../lib/types'
 
 /// A meter that reads like a voice, not like a number.
 function Meter({ label, level, active }: { label: string; level: number; active: boolean }) {
@@ -23,14 +23,34 @@ function Meter({ label, level, active }: { label: string; level: number; active:
   )
 }
 
+/// The last few lines, so it is obvious what Companion is hearing.
+function Transcript({ lines }: { lines: TranscriptLine[] }) {
+  if (lines.length === 0) return null
+
+  return (
+    <div className="mt-2 max-h-20 space-y-0.5 overflow-y-auto">
+      {lines.slice(-6).map((line) => (
+        <p key={line.id} className={cx('text-[11px] leading-snug', line.live ? 'text-muted' : 'text-ink')}>
+          <span className="text-muted">{line.who}: </span>
+          {line.text}
+        </p>
+      ))}
+    </div>
+  )
+}
+
 export function AwarenessBar({
   listening,
   levels,
   error,
+  transcript,
+  screen,
 }: {
   listening: ListeningState
   levels: Levels
   error: string
+  transcript: TranscriptLine[]
+  screen: string
 }) {
   if (!listening.active && !error) return null
 
@@ -62,6 +82,14 @@ export function AwarenessBar({
             <Meter label="You" level={levels.me} active={listening.active} />
             <Meter label="The call" level={levels.them} active={listening.active} />
           </div>
+
+          {screen && (
+            <p className="mt-1.5 truncate text-[11px] text-muted" title={screen}>
+              Watching · {screen}
+            </p>
+          )}
+
+          <Transcript lines={transcript} />
         </>
       )}
     </Bar>
