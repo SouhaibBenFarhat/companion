@@ -10,7 +10,10 @@ jobs:
     # Job names are referenced by branch protection as required checks —
     # keep "test" and "build" stable if you rename things.
     name: test
-    runs-on: macos-15
+    # macos-26 is required, not preferred. Transcription uses SpeechAnalyzer,
+    # which does not exist in the macOS 15 SDK — and an @available check
+    # cannot make an unknown type compile.
+    runs-on: macos-26
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,7 +23,7 @@ jobs:
 
   build:
     name: build
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Checkout
         uses: actions/checkout@v4
