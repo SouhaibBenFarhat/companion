@@ -122,9 +122,28 @@ Without `COMPANION_WEB_URL` the app loads the built interface from its bundle,
 or from `web/dist` when running out of the source tree.
 
 ```
-swift test              # CompanionCore unit tests
-scripts/build-app.sh    # dist/Companion.app + dist/Companion-arm64.zip
+swift test                      # CompanionCore unit tests
+scripts/build-app.sh            # dist/Companion.app, for release
+scripts/build-app.sh 0.1.0 dev  # dist/Companion Dev.app, for testing
 ```
+
+### The development build is a separate app
+
+`dev` produces a genuinely different app, the same way VS Code Insiders and
+Firefox Nightly do:
+
+| | development | installed |
+| --- | --- | --- |
+| bundle id | `com.souhaibbenfarhat.companion.dev` | `com.souhaibbenfarhat.companion` |
+| name | Companion Dev | Companion |
+| data | `~/Library/Application Support/Companion Dev` | `…/Companion` |
+| menu bar mark | hollow | solid |
+
+They hold separate macOS permissions and separate conversations, so a build
+under test cannot write into your real history, and both can run at once.
+
+The hollow menu bar mark matters more than it sounds. If the two look identical
+you will eventually debug the wrong one.
 
 Swift owns the window and the subprocess; the interface is React and TypeScript
 inside a `WKWebView`, served over a custom scheme.

@@ -13,6 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before the settings store is touched. A development build must not
+        // read or write the installed app's conversations.
+        StorageLocation.use(directoryName: BuildVariant.current.storageDirectoryName)
+
         // Before anything else: an accessory app never draws a menu bar, but
         // AppKit still routes ⌘A/⌘C/⌘V/⌘Z through it. Without this, editing
         // shortcuts are dead in every field.
@@ -49,11 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = StatusIcon.make()
-        item.button?.toolTip = "Companion"
+        item.button?.image = StatusIcon.make(development: BuildVariant.current.isDevelopment)
+        item.button?.toolTip = BuildVariant.current.displayName
 
         let menu = NSMenu()
-        menu.addItem(withTitle: "Show Companion", action: #selector(togglePanel), keyEquivalent: "")
+        menu.addItem(withTitle: "Show \(BuildVariant.current.displayName)", action: #selector(togglePanel), keyEquivalent: "")
             .target = self
 
         let listenItem = NSMenuItem(
@@ -76,7 +80,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(repositoryItem)
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Companion", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(
+            withTitle: "Quit \(BuildVariant.current.displayName)",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
 
         item.menu = menu
         statusItem = item
@@ -94,8 +102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// hidden, so it has to say which state it is in.
     private func refreshStatusItem() {
         let listening = panelController?.isListening ?? false
-        statusItem?.button?.image = StatusIcon.make(listening: listening)
-        statusItem?.button?.toolTip = listening ? "Companion — listening" : "Companion"
+        let name = BuildVariant.current.displayName
+        statusItem?.button?.image = StatusIcon.make(
+            listening: listening,
+            development: BuildVariant.current.isDevelopment
+        )
+        statusItem?.button?.toolTip = listening ? "\(name) — listening" : name
         listeningMenuItem?.title = listening ? "Stop listening" : "Start listening"
     }
 

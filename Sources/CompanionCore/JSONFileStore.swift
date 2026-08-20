@@ -46,8 +46,19 @@ public struct JSONFileStore<Value: Codable & Sendable>: Sendable {
 ///
 /// Everything stays on this machine. These are transcripts of work calls, so
 /// there is no sync and no upload anywhere.
+///
+/// The folder name follows the running app rather than being fixed, so a
+/// development build writes to `Companion Dev` and cannot touch the real
+/// conversations. Sharing one folder meant testing a change deleted history
+/// from the installed app.
 public enum StorageLocation {
-    public static let directoryName = "Companion"
+    /// Overridden by the app at launch from its own bundle name.
+    nonisolated(unsafe) public private(set) static var directoryName = "Companion"
+
+    public static func use(directoryName name: String) {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        directoryName = name
+    }
 
     public static func applicationSupportDirectory(
         fileManager: FileManager = .default
