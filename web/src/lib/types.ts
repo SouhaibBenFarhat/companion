@@ -28,6 +28,9 @@ export interface SettingsPayload {
   repositoryPath: string
   permission: string
   systemPrompt: string
+  /** Whether Companion may speak without being asked. */
+  suggestionsEnabled: boolean
+  persistTranscript: boolean
 }
 
 export type PermissionId = 'microphone' | 'systemAudio' | 'accessibility'
@@ -52,6 +55,31 @@ export interface Permissions {
   items: PermissionItem[]
 }
 
+export interface Levels {
+  me: number
+  them: number
+}
+
+export interface ListeningState {
+  active: boolean
+  /** Best guess at which app the call is in, may be empty. */
+  callApp: string
+}
+
+export interface TranscriptLine {
+  id: string
+  speaker: 'me' | 'them'
+  who: string
+  text: string
+  /** Still being revised by the recogniser. */
+  live: boolean
+}
+
+export interface Suggestion {
+  text: string
+  reason: string
+}
+
 export interface StatePayload {
   type: 'state'
   busy: boolean
@@ -59,6 +87,7 @@ export interface StatePayload {
   settings: SettingsPayload
   repository: string
   permissions: Permissions
+  listening: ListeningState
   currentId: string
   conversations: ConversationSummary[]
   messages: Msg[]
@@ -72,6 +101,13 @@ export type Incoming =
   | { type: 'busy'; busy: boolean }
   | { type: 'done'; isError: boolean; message: string; code?: string }
   | { type: 'focus' }
+  | { type: 'levels'; me: number; them: number }
+  | { type: 'captureError'; message: string }
+  | { type: 'openSettings' }
+  | { type: 'transcript'; entries: TranscriptLine[] }
+  | { type: 'screen'; app: string; detail: string }
+  | { type: 'suggestion'; text: string; reason: string }
+  | { type: 'screenshot'; state: 'capturing' | 'ready' | 'failed' | 'none'; name?: string; message?: string }
 
 /** Everything the page can ask Swift to do. */
 export type Outgoing =
@@ -87,5 +123,14 @@ export type Outgoing =
   | { type: 'requestPermission'; id: PermissionId }
   | { type: 'openPermissionSettings'; id: PermissionId }
   | { type: 'refreshPermissions' }
+  | { type: 'toggleListening' }
+  | { type: 'lookAtScreen' }
   | { type: 'drag'; dx: number; dy: number }
-  | { type: 'updateSettings'; agent?: string; agentPath?: string; permission?: string; systemPrompt?: string }
+  | {
+      type: 'updateSettings'
+      agent?: string
+      agentPath?: string
+      permission?: string
+      systemPrompt?: string
+      suggestionsEnabled?: boolean
+    }

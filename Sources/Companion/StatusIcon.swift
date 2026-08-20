@@ -6,7 +6,12 @@ import AppKit
 /// Marked as a template image, which is what lets macOS tint it correctly in
 /// light and dark menu bars without shipping two files.
 enum StatusIcon {
-    static func make(size: CGFloat = 18) -> NSImage {
+    /// The listening variant carries a red dot.
+    ///
+    /// macOS shows its own recording indicator in the menu bar, and the menu
+    /// bar is inside a shared screen — so listening is visible whatever we do.
+    /// Being obvious about it is the honest choice, not a cost.
+    static func make(size: CGFloat = 18, listening: Bool = false) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
             let center = NSPoint(x: size / 2, y: size / 2)
             let radius = size * 0.29
@@ -37,9 +42,23 @@ enum StatusIcon {
             NSColor.black.setFill()
             dot.fill()
 
+            if listening {
+                let radius = size * 0.15
+                let indicator = NSBezierPath(ovalIn: NSRect(
+                    x: size - radius * 2,
+                    y: size - radius * 2,
+                    width: radius * 2,
+                    height: radius * 2
+                ))
+                NSColor.systemRed.setFill()
+                indicator.fill()
+            }
+
             return true
         }
-        image.isTemplate = true
+        // A template image is tinted by the system, which would turn the red
+        // dot the same colour as everything else.
+        image.isTemplate = !listening
         return image
     }
 }

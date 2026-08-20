@@ -15,7 +15,10 @@ permissions:
 jobs:
   build-and-publish:
     name: Build, attach zip & bump tap
-    runs-on: macos-15
+    # macos-26 is required, not preferred. Transcription uses SpeechAnalyzer,
+    # which does not exist in the macOS 15 SDK — and an @available check
+    # cannot make an unknown type compile.
+    runs-on: macos-26
     env:
       TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
     steps:

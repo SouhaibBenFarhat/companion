@@ -11,6 +11,10 @@ final class PanelController: NSObject {
     private let panel: ChatPanel
     private let webView: WKWebView
     private let runner = AgentRunner()
+    private let awareness = AwarenessCoordinator()
+    /// Separate from `runner`, so a suggestion Companion decided to make on its
+    /// own can never cancel an answer the user actually asked for.
+    private let suggestionRunner = AgentRunner()
 
     private var settings: Settings
     private let settingsStore: JSONFileStore<Settings>
@@ -23,6 +27,8 @@ final class PanelController: NSObject {
     /// half-message behind in the saved history.
     private var pendingAnswer = ""
     private var isReady = false
+    /// A screenshot to attach to the next question, taken on request.
+    private var pendingScreenshot: URL?
     private var queued: [String] = []
 
     var onSettingsChanged: (() -> Void)?
@@ -90,6 +96,46 @@ final class PanelController: NSObject {
         panel.contentView = backdrop
         backdrop.addSubview(webView)
         panel.delegate = self
+
+        awareness.updateRepository(settings.repositoryURL())
+
+        awareness.onLevels = { [weak self] levels in
+            // Its own message, never through `state` — the page resets the
+            // streamed answer on every state payload, so routing levels there
+            // would wipe a half-drawn reply each time somebody spoke.
+            self?.send(["type": "levels", "me": levels.me, "them": levels.them])
+        }
+        awareness.onError = { [weak self] message in
+            self?.send(["type": "captureError", "message": message])
+        }
+        awareness.onTranscript = { [weak self] transcript in
+            self?.send([
+                "type": "transcript",
+                "entries": transcript.entries.suffix(60).map { entry in
+                    [
+                        "id": entry.id,
+                        "speaker": entry.speaker.rawValue,
+                        "who": entry.speaker.title,
+                        "text": entry.text,
+                        "live": entry.isVolatile,
+                    ]
+                },
+            ])
+        }
+        awareness.onStateChanged = { [weak self] in
+            self?.onListeningChanged?()
+            self?.sendState()
+        }
+        awareness.onScreen = { [weak self] context in
+            self?.send([
+                "type": "screen",
+                "app": context.appName,
+                "detail": context.filePath ?? context.url ?? context.windowTitle ?? "",
+            ])
+        }
+        awareness.onTrigger = { [weak self] reason, line in
+            self?.considerSpeaking(reason: reason, line: line)
+        }
 
         load()
     }
@@ -169,6 +215,133 @@ final class PanelController: NSObject {
         }
     }
 
+    // MARK: - Listening
+
+    var isListening: Bool { awareness.isListening }
+    var onListeningChanged: (() -> Void)?
+
+    func toggleListening() {
+        isListening ? stopListening() : startListening()
+    }
+
+    func startListening() {
+        let permissions = PermissionChecker.report()
+        guard permissions.canListen else {
+            send(["type": "captureError", "message": permissions.summary])
+            showSettingsTab()
+            return
+        }
+
+        settings.awareness.enabled = true
+        persistSettings()
+        awareness.start(settings: settings.awareness)
+    }
+
+    func stopListening() {
+        awareness.stop()
+        settings.awareness.enabled = false
+        persistSettings()
+    }
+
+    /// Something happened worth thinking about. Ask the agent, and show the
+    /// answer only if it is worth interrupting for.
+    private func considerSpeaking(reason: TurnReason, line: String) {
+        // Two switches, not one. Listening is useful with Companion silent.
+        guard settings.awareness.enabled, settings.awareness.suggestionsEnabled else { return }
+        // Never while the user is waiting on an answer they asked for, and
+        // never on top of a suggestion already in flight.
+        guard !runner.isRunning, !suggestionRunner.isRunning else { return }
+        guard let executable = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)
+        else { return }
+
+        let spoken = awareness.transcript.text(lastSeconds: 120)
+        let screen = awareness.screenContext?.summary ?? ""
+        let prompt = AwarenessPrompt.build(
+            question: "The last thing said was: \"\(line)\"",
+            conversation: spoken,
+            screen: screen
+        )
+
+        let command = AgentCommandBuilder.build(
+            kind: settings.agent,
+            executable: executable,
+            prompt: prompt,
+            workingDirectory: settings.repositoryURL(),
+            sessionID: nil,
+            systemPrompt: AwarenessPrompt.watchingInstruction,
+            permission: .readOnly
+        )
+
+        var answer = ""
+        SessionLog.shared.write("suggest", "thinking, reason=\(reason.rawValue)")
+        suggestionRunner.run(
+            command: command,
+            kind: settings.agent,
+            onEvent: { event in
+                if case .assistantText(let chunk) = event { answer += chunk }
+            },
+            onFinish: { [weak self] _, _ in
+                guard let self else { return }
+                let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard self.awareness.admitSuggestion(text) else { return }
+                // Kept only if the user allows the transcript to be stored.
+                // Otherwise it is shown and forgotten, which is what "do not
+                // persist" has to mean or the setting is decoration.
+                if self.settings.awareness.persistTranscript {
+                    self.current.append(Message(role: .assistant, text: text))
+                    try? self.conversations.save(self.current)
+                }
+                self.send([
+                    "type": "suggestion",
+                    "text": text,
+                    "reason": reason.rawValue,
+                ])
+            }
+        )
+    }
+
+    /// Takes one picture of the window in front, for the next question.
+    ///
+    /// On request only. Accessibility text is exact and free, so pixels are for
+    /// the cases with no text to read — a diagram, a rendered page, an app whose
+    /// accessibility tree gives up nothing.
+    private func captureScreen() {
+        guard #available(macOS 14.0, *) else { return }
+        send(["type": "screenshot", "state": "capturing"])
+
+        Task { @MainActor in
+            do {
+                let data = try await ScreenFrame.captureFrontmostWindow()
+                let url = try ScreenFrame.writeToTemporary(data)
+                pendingScreenshot = url
+                SessionLog.shared.write("screenshot", "captured \(data.count) bytes")
+                send([
+                    "type": "screenshot",
+                    "state": "ready",
+                    "name": awareness.screenContext?.appName ?? "the screen",
+                ])
+            } catch {
+                pendingScreenshot = nil
+                send([
+                    "type": "screenshot",
+                    "state": "failed",
+                    "message": error.localizedDescription,
+                ])
+            }
+        }
+    }
+
+    func discardScreenshot() {
+        if let pendingScreenshot { try? FileManager.default.removeItem(at: pendingScreenshot) }
+        pendingScreenshot = nil
+        send(["type": "screenshot", "state": "none"])
+    }
+
+    private func showSettingsTab() {
+        show()
+        send(["type": "openSettings"])
+    }
+
     // MARK: - State
 
     private func sendState() {
@@ -202,8 +375,14 @@ final class PanelController: NSObject {
                 "repositoryPath": settings.defaultRepositoryPath,
                 "permission": settings.permission.rawValue,
                 "systemPrompt": settings.systemPrompt,
+                "suggestionsEnabled": settings.awareness.suggestionsEnabled,
+                "persistTranscript": settings.awareness.persistTranscript,
             ],
             "repository": settings.repositoryURL().path,
+            "listening": [
+                "active": awareness.isListening,
+                "callApp": awareness.callAppName ?? "",
+            ],
             "permissions": [
                 "canListen": permissions.canListen,
                 "canSeeScreen": permissions.canSeeScreen,
@@ -255,10 +434,27 @@ final class PanelController: NSObject {
         sendState()
 
         pendingAnswer = ""
+        // Only what the agent has not been given yet. Resending the whole
+        // transcript each turn would grow every question without adding
+        // anything, since the session already remembers what it was told.
+        let spoken = awareness.isListening ? awareness.transcript.unsentText() : ""
+        var screen = awareness.screenContext?.summary ?? ""
+        if let shot = pendingScreenshot {
+            // A path, not the image. The agent reads files, so this costs
+            // nothing until it decides it needs to look.
+            screen += screen.isEmpty ? "" : "\n"
+            screen += "Screenshot of the current window: \(shot.path)"
+        }
+        let prompt = AwarenessPrompt.build(question: question, conversation: spoken, screen: screen)
+        if !spoken.isEmpty { awareness.markTranscriptSent() }
+        // One question, one picture. Keeping it would silently attach a stale
+        // screen to everything after it.
+        pendingScreenshot = nil
+
         let command = AgentCommandBuilder.build(
             kind: settings.agent,
             executable: executable,
-            prompt: question,
+            prompt: prompt,
             workingDirectory: settings.repositoryURL(),
             sessionID: current.agentSessionID,
             systemPrompt: settings.systemPrompt,
@@ -352,6 +548,7 @@ final class PanelController: NSObject {
 
         settings.defaultRepositoryPath = url.path
         persistSettings()
+        awareness.updateRepository(url)
         current = conversations.forRepository(url.path).first
             ?? Conversation(repositoryPath: url.path, agent: settings.agent)
         sendState()
@@ -420,6 +617,12 @@ extension PanelController: WKScriptMessageHandler {
             guard let raw = body["id"] as? String, let permission = Permission(rawValue: raw) else { return }
             PermissionChecker.openSettings(for: permission)
 
+        case "toggleListening":
+            toggleListening()
+
+        case "lookAtScreen":
+            captureScreen()
+
         case "refreshPermissions":
             // Cheap, and the only way to notice a grant made in System Settings
             // while the panel was open.
@@ -438,6 +641,7 @@ extension PanelController: WKScriptMessageHandler {
                 settings.permission = value
             }
             if let prompt = body["systemPrompt"] as? String { settings.systemPrompt = prompt }
+            if let value = body["suggestionsEnabled"] as? Bool { settings.awareness.suggestionsEnabled = value }
             AgentProbe.forget()
             persistSettings()
             sendState()

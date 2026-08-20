@@ -4,9 +4,11 @@ import { MessageList } from './components/MessageList'
 import { Composer } from './components/Composer'
 import { HistoryMenu } from './components/HistoryMenu'
 import { SettingsSheet } from './components/SettingsSheet'
+import { AwarenessBar } from './components/AwarenessBar'
+import { ComposerControls } from './components/ComposerControls'
 import { listen, send } from './lib/bridge'
 import { useTypewriter } from './lib/useTypewriter'
-import type { StatePayload } from './lib/types'
+import type { StatePayload, Suggestion, TranscriptLine } from './lib/types'
 
 export function App() {
   const [state, setState] = useState<StatePayload | null>(null)
@@ -24,6 +26,12 @@ export function App() {
   const [showHistory, setShowHistory] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [focusToken, setFocusToken] = useState(0)
+  const [levels, setLevels] = useState({ me: 0, them: 0 })
+  const [captureError, setCaptureError] = useState('')
+  const [transcript, setTranscript] = useState<TranscriptLine[]>([])
+  const [screen, setScreen] = useState('')
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
+  const [screenshot, setScreenshot] = useState<'capturing' | 'ready' | 'failed' | 'none'>('none')
 
   useEffect(() => {
     const stop = listen((payload) => {
@@ -31,6 +39,7 @@ export function App() {
         case 'state':
           setState(payload)
           setBusy(payload.busy)
+          if (payload.listening.active) setCaptureError('')
           // The finished answer now lives in `messages`; keeping the streamed
           // copy too would show it twice.
           resetStreaming()
@@ -63,6 +72,28 @@ export function App() {
           break
         case 'focus':
           setFocusToken((token) => token + 1)
+          break
+        case 'levels':
+          setLevels({ me: payload.me, them: payload.them })
+          break
+        case 'captureError':
+          setCaptureError(payload.message)
+          break
+        case 'openSettings':
+          setShowSettings(true)
+          break
+        case 'transcript':
+          setTranscript(payload.entries)
+          break
+        case 'screen':
+          setScreen([payload.app, payload.detail].filter(Boolean).join(' · '))
+          break
+        case 'suggestion':
+          setSuggestion({ text: payload.text, reason: payload.reason })
+          break
+        case 'screenshot':
+          setScreenshot(payload.state)
+          if (payload.state === 'failed' && payload.message) setCaptureError(payload.message)
           break
       }
     })
@@ -97,6 +128,25 @@ export function App() {
         onSettings={() => setShowSettings((open) => !open)}
       />
 
+      <AwarenessBar
+        listening={state.listening}
+        levels={levels}
+        error={captureError}
+        transcript={transcript}
+        screen={screen}
+        suggestionsEnabled={state.settings.suggestionsEnabled}
+        onSuggestionsChange={(value) =>
+          send({
+            type: 'updateSettings',
+            agent: state.settings.agent,
+            agentPath: state.settings.agentPath,
+            permission: state.settings.permission,
+            systemPrompt: state.settings.systemPrompt,
+            suggestionsEnabled: value,
+          })
+        }
+      />
+
       {showSettings ? (
         <SettingsSheet
           settings={state.settings}
@@ -116,8 +166,25 @@ export function App() {
             errorCode={errorCode}
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
+            suggestion={suggestion}
+            onDismissSuggestion={() => setSuggestion(null)}
           />
-          <Composer busy={busy} disabled={!state.agent.found} focusToken={focusToken} />
+          <Composer
+            busy={busy}
+            disabled={!state.agent.found}
+            focusToken={focusToken}
+            controls={
+              <ComposerControls
+                settings={state.settings}
+                agent={state.agent}
+                repository={state.repository}
+                listening={state.listening}
+                permissions={state.permissions}
+                screenshot={screenshot}
+                onOpenPermissions={() => setShowSettings(true)}
+              />
+            }
+          />
         </>
       )}
 

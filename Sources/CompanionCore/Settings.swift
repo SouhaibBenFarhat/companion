@@ -34,6 +34,9 @@ public struct Settings: Codable, Equatable, Sendable {
     public var hotKeyCode: UInt32
     public var hotKeyModifiers: UInt32
 
+    /// Listening and watching.
+    public var awareness: AwarenessSettings
+
     public init(
         agent: AgentKind = .claude,
         agentPath: String = "",
@@ -45,7 +48,8 @@ public struct Settings: Codable, Equatable, Sendable {
         panelWidth: Double = 460,
         panelHeight: Double = 560,
         hotKeyCode: UInt32 = 49, // Space
-        hotKeyModifiers: UInt32 = 2048 // Option
+        hotKeyModifiers: UInt32 = 2048, // Option
+        awareness: AwarenessSettings = AwarenessSettings()
     ) {
         self.agent = agent
         self.agentPath = agentPath
@@ -58,6 +62,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.panelHeight = panelHeight
         self.hotKeyCode = hotKeyCode
         self.hotKeyModifiers = hotKeyModifiers
+        self.awareness = awareness
     }
 
     public init(from decoder: Decoder) throws {
@@ -76,6 +81,17 @@ public struct Settings: Codable, Equatable, Sendable {
         hotKeyCode = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyCode) ?? defaults.hotKeyCode
         hotKeyModifiers = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyModifiers)
             ?? defaults.hotKeyModifiers
+        awareness = try container.decodeIfPresent(AwarenessSettings.self, forKey: .awareness)
+            ?? defaults.awareness
+    }
+
+    /// Whether the global shortcut actually changed.
+    ///
+    /// `AppDelegate` re-registers the hotkey whenever settings are saved, which
+    /// is on every keystroke in the settings sheet — tearing down and rebuilding
+    /// a system-wide shortcut each time.
+    public func hotKeyChanged(from other: Settings) -> Bool {
+        hotKeyCode != other.hotKeyCode || hotKeyModifiers != other.hotKeyModifiers
     }
 
     /// The repo to run in, falling back to the home directory so a fresh

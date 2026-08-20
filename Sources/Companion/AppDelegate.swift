@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var panelController: PanelController?
     private var hotKey: HotKey?
+    private var listeningMenuItem: NSMenuItem?
 
     private let settingsStore: JSONFileStore<Settings> = {
         let directory = StorageLocation.applicationSupportDirectory()
@@ -26,11 +27,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         panelController?.onSettingsChanged = { [weak self] in self?.registerHotKey() }
 
+        // Taps and aggregate devices outlive the process that made them, so a
+        // crash leaves them behind for the next launch to find.
+        CallCapture.sweepOrphans()
+
         setUpStatusItem()
         registerHotKey()
+
+        panelController?.onListeningChanged = { [weak self] in self?.refreshStatusItem() }
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
+    /// Leaving a tap running would keep a recording indicator in the menu bar
+    /// after Companion is gone.
+    func applicationWillTerminate(_ notification: Notification) {
+        panelController?.stopListening()
+    }
 
     // MARK: - Menu bar
 
@@ -42,6 +55,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Show Companion", action: #selector(togglePanel), keyEquivalent: "")
             .target = self
+
+        let listenItem = NSMenuItem(
+            title: "Start listening",
+            action: #selector(toggleListening),
+            keyEquivalent: ""
+        )
+        listenItem.target = self
+        menu.addItem(listenItem)
+        listeningMenuItem = listenItem
+
         menu.addItem(.separator())
 
         let repositoryItem = NSMenuItem(
@@ -61,6 +84,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePanel() {
         panelController?.toggle()
+    }
+
+    @objc private func toggleListening() {
+        panelController?.toggleListening()
+    }
+
+    /// The menu bar is the only place listening is visible when the panel is
+    /// hidden, so it has to say which state it is in.
+    private func refreshStatusItem() {
+        let listening = panelController?.isListening ?? false
+        statusItem?.button?.image = StatusIcon.make(listening: listening)
+        statusItem?.button?.toolTip = listening ? "Companion — listening" : "Companion"
+        listeningMenuItem?.title = listening ? "Stop listening" : "Start listening"
     }
 
     @objc private func chooseRepository() {
