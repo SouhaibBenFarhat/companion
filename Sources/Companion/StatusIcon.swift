@@ -11,7 +11,10 @@ enum StatusIcon {
     /// macOS shows its own recording indicator in the menu bar, and the menu
     /// bar is inside a shared screen — so listening is visible whatever we do.
     /// Being obvious about it is the honest choice, not a cost.
-    static func make(size: CGFloat = 18, listening: Bool = false) -> NSImage {
+    /// - Parameter development: draws the mark hollow. If a development build
+    ///   and an installed one look the same in the menu bar, you eventually
+    ///   spend twenty minutes debugging the wrong one.
+    static func make(size: CGFloat = 18, listening: Bool = false, development: Bool = false) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
             let center = NSPoint(x: size / 2, y: size / 2)
             let radius = size * 0.29
@@ -39,8 +42,15 @@ enum StatusIcon {
                 width: dotRadius * 2,
                 height: dotRadius * 2
             ))
-            NSColor.black.setFill()
-            dot.fill()
+            if development {
+                // Outlined rather than filled.
+                NSColor.black.setStroke()
+                dot.lineWidth = lineWidth * 0.3
+                dot.stroke()
+            } else {
+                NSColor.black.setFill()
+                dot.fill()
+            }
 
             if listening {
                 let radius = size * 0.15
