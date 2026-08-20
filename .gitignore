@@ -3,7 +3,6 @@ dist/
 .DS_Store
 packaging/AppIcon.iconset/
 packaging/AppIcon.icns
-packaging/Info.dev.plist
 .swiftpm/
 
 # Web UI

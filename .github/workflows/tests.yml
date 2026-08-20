@@ -18,6 +18,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Generated but committed, because swift build links it. This catches
+      # a change to Info.plist that was not carried across.
+      - name: Check the development plist is not stale
+        run: |
+          scripts/make-dev-plist.sh
+          if ! git diff --quiet packaging/Info.dev.plist; then
+            echo "::error::packaging/Info.dev.plist is out of date — run scripts/make-dev-plist.sh"
+            git diff packaging/Info.dev.plist
+            exit 1
+          fi
+
       - name: Run tests
         run: swift test
 

@@ -33,12 +33,8 @@ if [ ! -d web/node_modules ]; then
   npm --prefix web ci
 fi
 
-# `swift run` embeds this one, so a development binary identifies itself
-# correctly even outside a bundle.
-sed -e "s/__VERSION__/0.0.0-dev/g" \
-    -e "s/__BUNDLE_ID__/com.souhaibbenfarhat.companion.dev/g" \
-    -e "s/__APP_NAME__/Companion Dev/g" \
-    packaging/Info.plist > packaging/Info.dev.plist
+# Kept in step with the template on every build.
+scripts/make-dev-plist.sh > /dev/null
 
 echo "==> Building the interface"
 npm --prefix web run build
