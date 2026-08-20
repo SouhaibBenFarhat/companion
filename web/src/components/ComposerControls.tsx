@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { send } from '../lib/bridge'
 import { AgentMenu } from './AgentMenu'
 import { Surface, cx, focusRing } from '../ui'
-import { EditsIcon, ListenIcon, MutedIcon, ReadOnlyIcon } from '../ui/icons'
+import { EditsIcon, ListenIcon, MutedIcon, ReadOnlyIcon, ScreenshotIcon } from '../ui/icons'
 import type { AgentInfo, ListeningState, Permissions, SettingsPayload } from '../lib/types'
 
 /**
@@ -23,6 +23,7 @@ export function ComposerControls({
   repository,
   listening,
   permissions,
+  screenshot,
   onOpenPermissions,
 }: {
   settings: SettingsPayload
@@ -30,6 +31,7 @@ export function ComposerControls({
   repository: string
   listening: ListeningState
   permissions: Permissions
+  screenshot: 'capturing' | 'ready' | 'failed' | 'none'
   onOpenPermissions: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -156,6 +158,31 @@ export function ComposerControls({
             className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-accent"
           />
         )}
+      </button>
+
+      {/* Pixels on request only. The screen is read as text continuously,
+          which is exact and free; a picture is for the cases with no text —
+          a diagram, a rendered page, a canvas. */}
+      <button
+        type="button"
+        title={
+          screenshot === 'ready'
+            ? 'A picture of your window will go with the next message'
+            : 'Attach a picture of the window in front'
+        }
+        onClick={() => send({ type: 'lookAtScreen' })}
+        className={cx(
+          'grid h-7 w-7 place-items-center rounded-md transition-colors',
+          screenshot === 'ready'
+            ? 'bg-accent/12 text-accent-text'
+            : screenshot === 'failed'
+              ? 'text-danger hover:bg-control-hover'
+              : 'text-muted hover:bg-control-hover hover:text-ink',
+          screenshot === 'capturing' && 'animate-pulse',
+          focusRing,
+        )}
+      >
+        <ScreenshotIcon size={14} strokeWidth={1.9} />
       </button>
     </div>
   )

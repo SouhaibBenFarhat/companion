@@ -3,6 +3,7 @@ import AppKit
 import ApplicationServices
 import CompanionCore
 import CoreGraphics
+import ScreenCaptureKit
 
 /// Asks macOS what Companion is actually allowed to do.
 ///
@@ -64,18 +65,48 @@ enum PermissionChecker {
             }
 
         case .systemAudio:
-            // This is the one call that does prompt, and only the first time.
-            // After a refusal it does nothing at all, so the settings pane is
-            // opened as well rather than instead.
-            let granted = CGRequestScreenCaptureAccess()
-            if !granted { openSettings(for: permission) }
-            DispatchQueue.main.async { completion(screenRecording()) }
+            // `CGRequestScreenCaptureAccess` prompts once per app identity and
+            // then does nothing forever after. An app that used up its prompt
+            // and was refused is invisible: it never appears in the Screen
+            // Recording list, so there is nothing for the user to switch on and
+            // no way to add it by hand.
+            //
+            // Actually attempting a capture registers the app regardless. So
+            // ask first, and if that is a no, make a real attempt so the entry
+            // exists before sending the user to look for it.
+            if CGRequestScreenCaptureAccess() {
+                DispatchQueue.main.async { completion(.granted) }
+                return
+            }
+
+            registerForScreenRecording { [self] in
+                openSettings(for: permission)
+                DispatchQueue.main.async { completion(screenRecording()) }
+            }
 
         case .accessibility:
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
             if !trusted { openSettings(for: permission) }
             DispatchQueue.main.async { completion(trusted ? .granted : .denied) }
+        }
+    }
+
+    /// Forces macOS to list Companion under Screen Recording.
+    ///
+    /// The attempt is expected to fail — that is the point. Asking the window
+    /// server for shareable content is what creates the entry, and until the
+    /// entry exists the user is hunting for a row that was never added.
+    private static func registerForScreenRecording(then finish: @escaping () -> Void) {
+        Task {
+            do {
+                _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                SessionLog.shared.write("permission", "screen recording already available")
+            } catch {
+                // Expected while denied. The call still registers the app.
+                SessionLog.shared.write("permission", "registered for screen recording")
+            }
+            await MainActor.run { finish() }
         }
     }
 

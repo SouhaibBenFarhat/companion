@@ -27,6 +27,8 @@ final class PanelController: NSObject {
     /// half-message behind in the saved history.
     private var pendingAnswer = ""
     private var isReady = false
+    /// A screenshot to attach to the next question, taken on request.
+    private var pendingScreenshot: URL?
     private var queued: [String] = []
 
     var onSettingsChanged: (() -> Void)?
@@ -298,6 +300,43 @@ final class PanelController: NSObject {
         )
     }
 
+    /// Takes one picture of the window in front, for the next question.
+    ///
+    /// On request only. Accessibility text is exact and free, so pixels are for
+    /// the cases with no text to read — a diagram, a rendered page, an app whose
+    /// accessibility tree gives up nothing.
+    private func captureScreen() {
+        guard #available(macOS 14.0, *) else { return }
+        send(["type": "screenshot", "state": "capturing"])
+
+        Task { @MainActor in
+            do {
+                let data = try await ScreenFrame.captureFrontmostWindow()
+                let url = try ScreenFrame.writeToTemporary(data)
+                pendingScreenshot = url
+                SessionLog.shared.write("screenshot", "captured \(data.count) bytes")
+                send([
+                    "type": "screenshot",
+                    "state": "ready",
+                    "name": awareness.screenContext?.appName ?? "the screen",
+                ])
+            } catch {
+                pendingScreenshot = nil
+                send([
+                    "type": "screenshot",
+                    "state": "failed",
+                    "message": error.localizedDescription,
+                ])
+            }
+        }
+    }
+
+    func discardScreenshot() {
+        if let pendingScreenshot { try? FileManager.default.removeItem(at: pendingScreenshot) }
+        pendingScreenshot = nil
+        send(["type": "screenshot", "state": "none"])
+    }
+
     private func showSettingsTab() {
         show()
         send(["type": "openSettings"])
@@ -399,8 +438,18 @@ final class PanelController: NSObject {
         // transcript each turn would grow every question without adding
         // anything, since the session already remembers what it was told.
         let spoken = awareness.isListening ? awareness.transcript.unsentText() : ""
-        let prompt = AwarenessPrompt.build(question: question, conversation: spoken)
+        var screen = awareness.screenContext?.summary ?? ""
+        if let shot = pendingScreenshot {
+            // A path, not the image. The agent reads files, so this costs
+            // nothing until it decides it needs to look.
+            screen += screen.isEmpty ? "" : "\n"
+            screen += "Screenshot of the current window: \(shot.path)"
+        }
+        let prompt = AwarenessPrompt.build(question: question, conversation: spoken, screen: screen)
         if !spoken.isEmpty { awareness.markTranscriptSent() }
+        // One question, one picture. Keeping it would silently attach a stale
+        // screen to everything after it.
+        pendingScreenshot = nil
 
         let command = AgentCommandBuilder.build(
             kind: settings.agent,
@@ -570,6 +619,9 @@ extension PanelController: WKScriptMessageHandler {
 
         case "toggleListening":
             toggleListening()
+
+        case "lookAtScreen":
+            captureScreen()
 
         case "refreshPermissions":
             // Cheap, and the only way to notice a grant made in System Settings

@@ -107,6 +107,7 @@ export type Incoming =
   | { type: 'transcript'; entries: TranscriptLine[] }
   | { type: 'screen'; app: string; detail: string }
   | { type: 'suggestion'; text: string; reason: string }
+  | { type: 'screenshot'; state: 'capturing' | 'ready' | 'failed' | 'none'; name?: string; message?: string }
 
 /** Everything the page can ask Swift to do. */
 export type Outgoing =
@@ -123,6 +124,7 @@ export type Outgoing =
   | { type: 'openPermissionSettings'; id: PermissionId }
   | { type: 'refreshPermissions' }
   | { type: 'toggleListening' }
+  | { type: 'lookAtScreen' }
   | { type: 'drag'; dx: number; dy: number }
   | {
       type: 'updateSettings'

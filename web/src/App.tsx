@@ -31,6 +31,7 @@ export function App() {
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [screen, setScreen] = useState('')
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
+  const [screenshot, setScreenshot] = useState<'capturing' | 'ready' | 'failed' | 'none'>('none')
 
   useEffect(() => {
     const stop = listen((payload) => {
@@ -89,6 +90,10 @@ export function App() {
           break
         case 'suggestion':
           setSuggestion({ text: payload.text, reason: payload.reason })
+          break
+        case 'screenshot':
+          setScreenshot(payload.state)
+          if (payload.state === 'failed' && payload.message) setCaptureError(payload.message)
           break
       }
     })
@@ -175,6 +180,7 @@ export function App() {
                 repository={state.repository}
                 listening={state.listening}
                 permissions={state.permissions}
+                screenshot={screenshot}
                 onOpenPermissions={() => setShowSettings(true)}
               />
             }

@@ -21,6 +21,7 @@ export {
   Sparkles as SpeakUpIcon,
   Terminal as AgentIcon,
   Check as CheckIcon,
+  Image as ScreenshotIcon,
 } from 'lucide-react'
 
 /** Panel-sized default. Lucide draws on a 24px grid; 14 suits 13px text. */
