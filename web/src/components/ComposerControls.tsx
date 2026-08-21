@@ -52,14 +52,6 @@ export function ComposerControls({
 
   return (
     <div className="flex items-center gap-0.5">
-      <AgentMenu
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
-        settings={settings}
-        agent={agent}
-        repository={repository}
-      />
-
       {/* Permission keeps its word at every width. A dangerous state must
           never be carried by a glyph alone. */}
       <div className="relative">
@@ -74,9 +66,12 @@ export function ComposerControls({
           onClick={() => (readOnly ? setConfirmEdits(true) : setPermission('readOnly'))}
           className={cx(
             'inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] transition-colors',
+            // Tinted, not red. Red says something is broken; this is a state
+            // the user deliberately turned on. The caution belongs in the
+            // confirmation, which is where the decision actually happens.
             readOnly
               ? 'text-muted hover:bg-control-hover hover:text-ink'
-              : 'bg-danger-soft text-danger hover:brightness-95',
+              : 'bg-accent/12 text-accent-text hover:bg-accent/20',
             focusRing,
           )}
         >
@@ -126,6 +121,14 @@ export function ComposerControls({
           </Surface>
         )}
       </div>
+
+      <AgentMenu
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        settings={settings}
+        agent={agent}
+        repository={repository}
+      />
 
       {/* Unavailable is not the same as off, and never `disabled` — the user
           can unlock it, so the button stays live and routes to the fix. */}

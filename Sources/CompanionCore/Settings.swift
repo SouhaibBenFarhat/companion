@@ -30,6 +30,13 @@ public struct Settings: Codable, Equatable, Sendable {
     public var panelWidth: Double
     public var panelHeight: Double
 
+    /// Whether the panel was open when Companion last quit.
+    ///
+    /// Restored at launch. A panel that always starts hidden means every
+    /// restart costs a keystroke to get back to where you were, which during
+    /// development is every few minutes.
+    public var panelWasVisible: Bool
+
     /// Which microphone to record. Empty means the system default.
     ///
     /// Stored as the device's unique identifier rather than its name, so the
@@ -60,6 +67,7 @@ public struct Settings: Codable, Equatable, Sendable {
         panelOriginY: Double? = nil,
         panelWidth: Double = 460,
         panelHeight: Double = 560,
+        panelWasVisible: Bool = false,
         microphoneDeviceUID: String = "",
         hideFromScreenShare: Bool = true,
         hotKeyCode: UInt32 = 49, // Space
@@ -75,6 +83,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.panelOriginY = panelOriginY
         self.panelWidth = panelWidth
         self.panelHeight = panelHeight
+        self.panelWasVisible = panelWasVisible
         self.microphoneDeviceUID = microphoneDeviceUID
         self.hideFromScreenShare = hideFromScreenShare
         self.hotKeyCode = hotKeyCode
@@ -95,6 +104,8 @@ public struct Settings: Codable, Equatable, Sendable {
         panelOriginY = try container.decodeIfPresent(Double.self, forKey: .panelOriginY)
         panelWidth = try container.decodeIfPresent(Double.self, forKey: .panelWidth) ?? defaults.panelWidth
         panelHeight = try container.decodeIfPresent(Double.self, forKey: .panelHeight) ?? defaults.panelHeight
+        panelWasVisible = try container.decodeIfPresent(Bool.self, forKey: .panelWasVisible)
+            ?? defaults.panelWasVisible
         microphoneDeviceUID = try container.decodeIfPresent(String.self, forKey: .microphoneDeviceUID)
             ?? defaults.microphoneDeviceUID
         hideFromScreenShare = try container.decodeIfPresent(Bool.self, forKey: .hideFromScreenShare)

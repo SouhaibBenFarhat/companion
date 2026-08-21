@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotKey()
 
         panelController?.onListeningChanged = { [weak self] in self?.refreshStatusItem() }
+        panelController?.restoreVisibility()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

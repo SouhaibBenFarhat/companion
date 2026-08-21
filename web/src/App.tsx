@@ -124,6 +124,10 @@ export function App() {
         repository={state.repository}
         historyOpen={showHistory}
         settingsOpen={showSettings}
+        onChat={() => {
+          setShowSettings(false)
+          setShowHistory(false)
+        }}
         onHistory={() => setShowHistory((open) => !open)}
         onSettings={() => setShowSettings((open) => !open)}
       />
