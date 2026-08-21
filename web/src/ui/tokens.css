@@ -70,8 +70,12 @@
      token lands on a colour that is not on screen, which is how the composer
      ended up with a hairline nobody could see. Alpha composites over whatever
      is really there. --t-2 flips between appearances on its own, so the line
-     is dark on light and light on dark with no second value. */
-  --alpha-divider: 0.30;
+     is dark on light and light on dark with no second value.
+
+     0.14 puts it at dE 0.038 against the composer's well — half again over the
+     0.025 floor the test enforces. 0.30 was three times the floor and read as
+     a border rather than a seam. */
+  --alpha-divider: 0.14;
 
   /* Surfaces stay see-through so the material behind the panel shows. */
   --alpha-well: 0.74;
