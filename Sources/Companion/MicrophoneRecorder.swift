@@ -18,7 +18,14 @@ import Foundation
 ///    accepted and does nothing. Zero volume is what stops the user hearing
 ///    themselves.
 final class MicrophoneRecorder {
-    private let engine = AVAudioEngine()
+    /// Replaced on every attempt, never reused.
+    ///
+    /// A failed start leaves the input node's audio unit initialised and
+    /// holding the device it failed on, and the next attempt could not even set
+    /// a device on it — -10851 on the retry, so the fallback ladder collapsed
+    /// on its second rung for a reason that had nothing to do with the device
+    /// it was trying.
+    private var engine = AVAudioEngine()
     private let ring = AudioRingBuffer(capacity: 48_000 * 2)
     private var converter: AVAudioConverter?
     private var isRunning = false
@@ -115,6 +122,7 @@ final class MicrophoneRecorder {
     private func open(echoCancellation: Bool, device: AudioInputDevice?) throws {
         stop()
         ring.reset()
+        engine = AVAudioEngine()
 
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             throw MicrophoneError.notPermitted

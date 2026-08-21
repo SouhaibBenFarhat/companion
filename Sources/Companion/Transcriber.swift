@@ -103,6 +103,13 @@ final class Transcriber {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
+                // Logged as well as shown. This is the one failure that ends
+                // transcription for the rest of the call, and it was reaching
+                // the panel without leaving a trace anywhere to diagnose from.
+                SessionLog.shared.write(
+                    "transcribe",
+                    "\(self.speaker) stream failed: \(error.localizedDescription)"
+                )
                 await MainActor.run { self.onError?(error.localizedDescription) }
             }
         }
@@ -161,7 +168,13 @@ final class Transcriber {
         // call. The clock is fixed upstream; this is here because a stream the
         // user cannot restart is too expensive to lose to an arithmetic edge —
         // a device waking up, a latency figure that changed mid-run.
+        // Never before zero either. The hardware latency is subtracted from
+        // the capture time, so the first buffers of a session land just before
+        // the origin — and the analyzer reads a negative start as preceding
+        // input it has already taken, which is the same rejection.
         var start = startTime
+        if start < .zero { start = .zero }
+
         if let last = lastStartTime, start <= last {
             start = CMTimeAdd(last, CMTime(value: 1, timescale: start.timescale))
             nudged += 1
