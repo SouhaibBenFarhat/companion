@@ -350,6 +350,7 @@ final class PanelController: NSObject {
             systemPrompt: AgentContext.systemPrompt(
                 repository: settings.repositoryURL(),
                 hasRepository: settings.hasRepository,
+                isListening: true,
                 watching: AwarenessPrompt.watchingInstruction
             ),
             permission: .readOnly
@@ -494,6 +495,9 @@ final class PanelController: NSObject {
                         "reason": permission.reason,
                         "state": permissions.state(of: permission).rawValue,
                         "needsRestart": permission.needsRestartAfterGranting,
+                        "resetCommand": permission.resetCommand(
+                            bundleIdentifier: Bundle.main.bundleIdentifier ?? ""
+                        ),
                     ]
                 },
             ],
@@ -558,6 +562,7 @@ final class PanelController: NSObject {
             systemPrompt: AgentContext.systemPrompt(
                 repository: settings.repositoryURL(),
                 hasRepository: settings.hasRepository,
+                isListening: isListening,
                 watching: isListening ? AwarenessPrompt.watchingInstruction : "",
                 extra: settings.systemPrompt
             ),

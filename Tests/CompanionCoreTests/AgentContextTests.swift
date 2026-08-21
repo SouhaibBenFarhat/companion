@@ -73,4 +73,35 @@ final class AgentContextTests: XCTestCase {
         let prompt = AgentContext.systemPrompt(repository: repo, hasRepository: true, extra: "   \n ")
         XCTAssertFalse(prompt.hasSuffix("\n"))
     }
+
+    // MARK: - Knowing what the app can do
+
+    /// Asked "can you listen to calls and help me answer in real time" — the
+    /// thing this app exists for — the agent said no, it could only see what
+    /// was typed. It was describing the CLI, because nobody had told it what it
+    /// was plugged into.
+    func testKnowsCompanionCanListenAndWatch() {
+        let prompt = AgentContext.systemPrompt(repository: repo, hasRepository: true)
+        XCTAssertTrue(prompt.contains("Listen to a call"))
+        XCTAssertTrue(prompt.contains("Watch the screen"))
+    }
+
+    func testSaysListeningIsOffAndHowToTurnItOn() {
+        let prompt = AgentContext.systemPrompt(repository: repo, hasRepository: true, isListening: false)
+        XCTAssertTrue(prompt.contains("Listening is OFF"))
+        XCTAssertTrue(prompt.contains("microphone button"))
+        XCTAssertTrue(prompt.contains("do not tell them you"))
+    }
+
+    func testSaysListeningIsOnWhenItIs() {
+        let prompt = AgentContext.systemPrompt(repository: repo, hasRepository: true, isListening: true)
+        XCTAssertTrue(prompt.contains("Listening is ON"))
+        XCTAssertFalse(prompt.contains("Listening is OFF"))
+    }
+
+    /// Local capture is a selling point and a promise; it has to be stated.
+    func testSaysNothingIsUploaded() {
+        let prompt = AgentContext.systemPrompt(repository: repo, hasRepository: true)
+        XCTAssertTrue(prompt.contains("Nothing is uploaded"))
+    }
 }

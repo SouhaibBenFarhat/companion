@@ -1,6 +1,43 @@
 import { send } from '../lib/bridge'
+import { useState } from 'react'
 import { Button, Divider, Hint, Notice, cx } from '../ui'
 import type { PermissionItem, Permissions as PermissionsPayload } from '../lib/types'
+
+/**
+ * The way out when the switch is already on and the app is still refused.
+ *
+ * A grant is filed against what the app's signature says. Replace an unsigned
+ * build with a signed one and the old entry stays behind: macOS has a decision
+ * on record for this bundle identifier, so it stops prompting, and the row in
+ * System Settings reads on while the app gets nothing. Nothing inside the app
+ * can clear that — the command is the only route, and it is the user's to run.
+ */
+function Stuck({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false)
+
+  return (
+    <div className="mt-1.5">
+      <Hint>
+        Switch already on and still asking? macOS is holding an old entry for a
+        previous build of this app. Clear it in Terminal, then reopen Companion:
+      </Hint>
+      <div data-surface="code" className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5">
+        <code className="selectable min-w-0 flex-1 truncate font-mono text-xs text-ink">{command}</code>
+        <Button
+          size="xs"
+          tight
+          onClick={() => {
+            navigator.clipboard.writeText(command)
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 1600)
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 function Row({ item }: { item: PermissionItem }) {
   const granted = item.state === 'granted'
@@ -25,6 +62,8 @@ function Row({ item }: { item: PermissionItem }) {
         {granted && item.needsRestart && (
           <Hint>Just granted this? Quit and reopen Companion — macOS only reads it once per launch.</Hint>
         )}
+
+        {!granted && item.resetCommand && <Stuck command={item.resetCommand} />}
       </div>
 
       {!granted && (

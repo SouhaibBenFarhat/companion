@@ -51,6 +51,26 @@ public enum Permission: String, CaseIterable, Codable, Sendable {
     /// Accessibility and Screen Recording are read once per process on first
     /// use. Granting them while the app is running leaves it believing it is
     /// still denied, which reads as the feature being broken.
+    /// What this permission is called in the privacy database.
+    ///
+    /// Needed because a grant is filed against what the app's signature says,
+    /// and replacing an unsigned build with a signed one leaves the old entry
+    /// behind. macOS then has a decision on record for this bundle identifier,
+    /// so it never prompts again — and the row in System Settings shows on
+    /// while the app is refused. Clearing the entry is the only way out, and
+    /// only the user can do it.
+    public var tccService: String {
+        switch self {
+        case .microphone: return "Microphone"
+        case .systemAudio: return "ScreenCapture"
+        case .accessibility: return "Accessibility"
+        }
+    }
+
+    public func resetCommand(bundleIdentifier: String) -> String {
+        "tccutil reset \(tccService) \(bundleIdentifier)"
+    }
+
     public var needsRestartAfterGranting: Bool {
         switch self {
         case .microphone: return false

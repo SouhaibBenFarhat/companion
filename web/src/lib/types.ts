@@ -51,6 +51,8 @@ export interface PermissionItem {
   state: PermissionState
   /** Granting these while the app runs does not take effect until it restarts. */
   needsRestart: boolean
+  /** Clears a stale entry so macOS asks again. The user runs it, not the app. */
+  resetCommand: string
 }
 
 export interface Permissions {

@@ -22,10 +22,11 @@ public enum AgentContext {
     public static func systemPrompt(
         repository: URL,
         hasRepository: Bool,
+        isListening: Bool = false,
         watching: String = "",
         extra: String = ""
     ) -> String {
-        var parts: [String] = [situation]
+        var parts: [String] = [situation, capabilities(isListening: isListening)]
 
         if hasRepository {
             parts.append("""
@@ -72,6 +73,46 @@ public enum AgentContext {
         call, sharing their screen, and needs a second opinion nobody else in \
         the meeting can see.
         """
+
+    /// What the app around it can do, and what it is doing right now.
+    ///
+    /// Without this the agent answers about itself from its own system prompt,
+    /// which describes a command line tool with no ears. Asked "can you listen
+    /// to calls and help me answer in real time" — the thing Companion is for —
+    /// it said no, it could only see what was typed into the chat box. It was
+    /// not wrong about the CLI. It had simply never been told what it was
+    /// plugged into.
+    static func capabilities(isListening: Bool) -> String {
+        let now = isListening
+            ? """
+                Listening is ON right now. The user's microphone and the other \
+                side's audio are both being captured and transcribed, and the \
+                recent transcript is included with their questions. You are \
+                also being told which window they are working in.
+                """
+            : """
+                Listening is OFF right now, so you can only see what the user \
+                types. If they ask you to follow a call, do not tell them you \
+                cannot hear — tell them to click the microphone button in the \
+                panel, next to the agent name.
+                """
+
+        return """
+            What Companion can do, so that you describe yourself accurately \
+            rather than describing a command line tool:
+
+            - Listen to a call. It records the user's microphone and the other \
+              person's audio separately, straight out of the call app, and \
+              transcribes both live on this machine. Nothing is uploaded.
+            - Watch the screen. It reads the text of the window in front — the \
+              file being edited, the page being viewed — and can attach a \
+              picture of it on request.
+            - Speak up unprompted, when the user turns that on, if something \
+              said on the call is worth interrupting for.
+
+            \(now)
+            """
+    }
 
     /// How to write, given that the reader is mid-conversation with a person.
     public static let style = """
