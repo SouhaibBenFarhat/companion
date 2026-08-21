@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { send } from '../lib/bridge'
-import { Bar, Button, Field, Input, Notice, Select, Textarea, Toggle } from '../ui'
+import { Button, Field, Input, Notice, Select, Textarea, Toggle } from '../ui'
 import { FolderIcon, iconSize, iconStroke } from '../ui/icons'
 import { Permissions } from './Permissions'
 import type {
@@ -52,15 +52,11 @@ export function SettingsSheet({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <Bar edge="bottom" className="flex items-center justify-between px-3 py-2">
-        <span className="text-[12px] font-medium text-ink">Settings</span>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Done
-        </Button>
-      </Bar>
-
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-3">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* No title bar. The header already says which view you are in, and a
+          second "Settings" underneath it was the same word twice.
+          Bottom padding leaves room for the button floating over this. */}
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-3 pb-16">
         <Group title="Agent">
           {!agent.found && (
             <Notice tone="danger">
@@ -157,11 +153,6 @@ export function SettingsSheet({
             checked={draft.hideFromScreenShare}
             onChange={(value) => apply({ hideFromScreenShare: value })}
           />
-          {!draft.hideFromScreenShare && (
-            <Notice tone="danger">
-              The panel is visible to anyone you share your screen with.
-            </Notice>
-          )}
         </Group>
 
         <Group title="Permissions">
@@ -182,6 +173,16 @@ export function SettingsSheet({
             />
           </Field>
         </Group>
+      </div>
+
+      {/* Floats over the scrolling content rather than sitting in a bar, so it
+          is reachable without scrolling to the end of a long form. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2.5">
+        <div className="pointer-events-auto">
+          <Button variant="primary" full onClick={onClose}>
+            Done
+          </Button>
+        </div>
       </div>
     </div>
   )

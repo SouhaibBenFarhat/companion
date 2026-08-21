@@ -172,10 +172,25 @@ final class PanelController: NSObject {
         // while your typing comes here.
         panel.makeKeyAndOrderFront(nil)
         send(["type": "focus"])
+        rememberVisibility(true)
     }
 
     func hide() {
         panel.orderOut(nil)
+        rememberVisibility(false)
+    }
+
+    /// So a restart puts the panel back where it was.
+    private func rememberVisibility(_ visible: Bool) {
+        guard settings.panelWasVisible != visible else { return }
+        settings.panelWasVisible = visible
+        try? settingsStore.save(settings)
+    }
+
+    /// Reopens the panel if it was open when Companion last quit.
+    func restoreVisibility() {
+        guard settings.panelWasVisible else { return }
+        show()
     }
 
     // MARK: - Web view

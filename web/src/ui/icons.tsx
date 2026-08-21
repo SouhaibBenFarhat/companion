@@ -22,6 +22,7 @@ export {
   Terminal as AgentIcon,
   Check as CheckIcon,
   Image as ScreenshotIcon,
+  MessageSquare as ChatIcon,
 } from 'lucide-react'
 
 /** Panel-sized default. Lucide draws on a 24px grid; 14 suits 13px text. */
