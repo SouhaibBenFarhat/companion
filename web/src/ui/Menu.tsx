@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { DropdownMenu } from 'radix-ui'
-import { CheckIcon } from './icons'
+import { CheckIcon, DeleteIcon } from './icons'
+import { IconButton } from './IconButton'
 
 /**
  * A dropdown menu.
@@ -71,8 +72,10 @@ export function Menu({
           // listens on `document` in the capture phase, so without this one
           // press closes the menu AND the whole panel.
           onEscapeKeyDown={(event) => event.stopPropagation()}
-          // Returning focus to a small chevron is wrong in a chat panel.
-          onCloseAutoFocus={(event) => event.preventDefault()}
+          // Radix returns focus to the trigger on close. That was cancelled
+          // here, which dropped focus on <body> — the next Tab restarted from
+          // the first control in the panel and a keyboard user lost their
+          // place. Getting the trigger back is worth more than the aesthetic.
           // z-index goes on Content, never a wrapper: Radix inserts its own
           // positioning div that cannot be given a class, and copies the
           // computed stacking level from here at mount.
@@ -92,6 +95,7 @@ export function Menu({
 /** A row. Renders the tick itself so every menu aligns the same way. */
 export function MenuItem({
   onSelect,
+  onDelete,
   selected = false,
   icon,
   label,
@@ -100,6 +104,13 @@ export function MenuItem({
   tone = 'neutral',
 }: {
   onSelect: () => void
+  /**
+   * Removes the thing this row names. The row owns the key handler, because
+   * Radix keeps roving focus on the row itself — a button nested inside a
+   * `role="menuitem"` can never be reached with the arrow keys, and Tab closes
+   * the menu, so a trash icon on its own is mouse-only.
+   */
+  onDelete?: () => void
   selected?: boolean
   icon?: React.ReactNode
   label: string
@@ -112,6 +123,12 @@ export function MenuItem({
     <DropdownMenu.Item
       data-pressable
       onSelect={onSelect}
+      onKeyDown={(event) => {
+        if (!onDelete) return
+        if (event.key !== 'Backspace' && event.key !== 'Delete') return
+        event.preventDefault()
+        onDelete()
+      }}
       className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left outline-none"
     >
       <span className="mt-0.5 w-3 shrink-0">
@@ -124,6 +141,26 @@ export function MenuItem({
         </span>
         {detail && <span className="block text-xs leading-snug text-muted">{detail}</span>}
       </span>
+
+      {onDelete && (
+        <span className="ml-2 shrink-0">
+          <IconButton
+            label={`Delete ${label}`}
+            hint={`Delete ${label} — or press Delete on this row`}
+            size="xs"
+            tone="danger"
+            // Out of the tab order: the row already handles the keyboard, and a
+            // second stop here would fight Radix's roving focus.
+            tabIndex={-1}
+            onClick={(event) => {
+              event.stopPropagation()
+              onDelete()
+            }}
+          >
+            <DeleteIcon size={12} strokeWidth={2} />
+          </IconButton>
+        </span>
+      )}
 
       {trailing && <span className="ml-2 shrink-0 text-xs text-muted">{trailing}</span>}
     </DropdownMenu.Item>

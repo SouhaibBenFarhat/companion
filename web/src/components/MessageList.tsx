@@ -4,6 +4,9 @@ import { Button, Callout, Notice, Pulse, Surface } from '../ui'
 import { send } from '../lib/bridge'
 import type { Msg, Suggestion } from '../lib/types'
 
+/** Within this far of the end still counts as "following along". */
+const NEAR_BOTTOM = 60
+
 function Answer({ text }: { text: string }) {
   return (
     <Surface level="card">
@@ -68,16 +71,23 @@ export function MessageList({
   onDismissSuggestion: () => void
 }) {
   const bottom = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLDivElement>(null)
 
-  // Follow the answer as it streams in.
+  // Follow the answer as it streams in — but only while you are already at the
+  // bottom. `streaming` ticks many times a second, so without this, scrolling
+  // up to re-read something snapped you back down within a frame.
   useEffect(() => {
+    const box = list.current
+    if (!box) return
+    const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight
+    if (distanceFromBottom > NEAR_BOTTOM) return
     bottom.current?.scrollIntoView({ block: 'end' })
   }, [messages.length, streaming, busy, error])
 
   const empty = messages.length === 0 && !streaming && !busy
 
   return (
-    <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
+    <div ref={list} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
       {!agentFound && (
         <Notice tone="danger">
           {agentTitle} was not found. Install it, or set the path in Settings. Companion drives the

@@ -29,6 +29,7 @@ export function Button({
   full = false,
   pressed = false,
   tight = false,
+  flexible = false,
   children,
   ...props
 }: NativeButton & {
@@ -40,6 +41,8 @@ export function Button({
   pressed?: boolean
   /** Narrow padding, for a button that sits in a row of icons. */
   tight?: boolean
+  /** May shrink and truncate. For a row that has to survive a 320pt panel. */
+  flexible?: boolean
 }) {
   const resolved: Tone = tone ?? (variant === 'filled' ? 'accent' : 'neutral')
 
@@ -50,7 +53,8 @@ export function Button({
       data-pressed={pressed}
       {...props}
       className={cx(
-        'inline-flex shrink-0 select-none items-center justify-center gap-1.5 rounded-md',
+        'inline-flex select-none items-center justify-center gap-1.5 rounded-md',
+        flexible ? 'min-w-0 shrink' : 'shrink-0',
         tight ? 'px-1.5' : 'px-3',
         height[size],
         textSize[size],

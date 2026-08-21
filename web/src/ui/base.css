@@ -71,7 +71,12 @@ body {
 /* Disabled is a colour, not an opacity. Fading the whole element also fades
    its background, which on a translucent panel lets the desktop through. */
 [data-pressable]:disabled,
-[data-field]:disabled {
+[data-field]:disabled,
+/* The composer's field carries no data-field — the well rings for it — so it
+   is named directly. It also has to outrank `.selectable` further down, which
+   is unlayered and sets `cursor: auto`; an element selector plus a pseudo-class
+   does that on specificity, whatever the order. */
+textarea:disabled {
   cursor: not-allowed;
   color: var(--c-faint);
 }
@@ -85,6 +90,14 @@ body {
 [data-surface='overlay'] { --surface: var(--s-6); background-color: var(--c-overlay); }
 [data-surface='input'] { --surface: var(--s-0); background-color: var(--c-input); }
 [data-surface='code'] { --surface: var(--s-2); background-color: var(--c-code); }
+
+/* The composer's toolbar sits inside the input well but is raised above it.
+   Stepping its hover from --s-0, the darkest light surface, put muted text at
+   APCA Lc 56.6 against a floor of 60. A raised control steps from the chrome
+   behind the composer, not from the hole it sits in. */
+[data-surface='input'] [data-pressable] {
+  --surface: var(--s-3);
+}
 
 /* The panel floor, so a control that is not inside any surface still has one
    to derive from. */

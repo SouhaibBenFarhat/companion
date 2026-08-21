@@ -133,6 +133,7 @@ export type Outgoing =
   | { type: 'deleteConversation'; id: string }
   | { type: 'pickRepository' }
   | { type: 'signIn' }
+  | { type: 'openLink'; url: string }
   | { type: 'requestPermission'; id: PermissionId }
   | { type: 'openPermissionSettings'; id: PermissionId }
   | { type: 'refreshPermissions' }

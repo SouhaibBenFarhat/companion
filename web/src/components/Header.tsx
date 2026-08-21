@@ -8,8 +8,13 @@ import type { ConversationSummary } from '../lib/types'
  * The top strip: which repo, and the four panel actions.
  *
  * Every control here drags the window as well as doing its own job, so the
- * whole strip is grabbable rather than a thin gap between buttons. `startDrag`
- * fires the click itself when the pointer barely moved.
+ * whole strip is grabbable rather than a thin gap between buttons: mousedown
+ * starts the drag, click does the job, and a press that really dragged has its
+ * click swallowed.
+ *
+ * Both handlers, not one. Doing the job from inside `startDrag` meant the
+ * keyboard could never reach any of these — Tab and Enter send a click, and
+ * nothing was listening for one.
  *
  * History is the exception: it anchors a menu, so it opens on press like every
  * other menu on the system and cannot also start a drag.
@@ -36,7 +41,7 @@ export function Header({
   const name = repository.split('/').filter(Boolean).pop() ?? repository
 
   return (
-    <Bar edge="bottom" onMouseDown={(event) => startDrag(event)}>
+    <Bar edge="bottom" onMouseDown={startDrag}>
       <div className="group relative cursor-grab active:cursor-grabbing">
         <GrabHandle />
 
@@ -50,7 +55,8 @@ export function Header({
               size="sm"
               tight
               title={`${repository} — click to change, drag to move`}
-              onMouseDown={(event) => startDrag(event, () => send({ type: 'pickRepository' }))}
+              onMouseDown={startDrag}
+              onClick={() => send({ type: 'pickRepository' })}
             >
               <span className="max-w-[var(--label-max)] truncate font-medium">{name}</span>
             </Button>
@@ -63,7 +69,8 @@ export function Header({
           <IconButton
             label="Chat"
             pressed={!settingsOpen}
-            onMouseDown={(event) => startDrag(event, onChat)}
+            onMouseDown={startDrag}
+            onClick={onChat}
           >
             <ChatIcon size={iconSize} strokeWidth={iconStroke} />
           </IconButton>
@@ -74,7 +81,13 @@ export function Header({
             conversations={conversations}
             currentId={currentId}
             trigger={
-              <IconButton label="History" pressed={historyOpen}>
+              // Opens the menu on press, so it is the one control in the
+              // strip that must not also grab the window.
+              <IconButton
+                label="History"
+                pressed={historyOpen}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
                 <HistoryIcon size={iconSize} strokeWidth={iconStroke} />
               </IconButton>
             }
@@ -82,7 +95,8 @@ export function Header({
 
           <IconButton
             label="New conversation"
-            onMouseDown={(event) => startDrag(event, () => send({ type: 'newConversation' }))}
+            onMouseDown={startDrag}
+            onClick={() => send({ type: 'newConversation' })}
           >
             <NewIcon size={iconSize} strokeWidth={iconStroke} />
           </IconButton>
@@ -90,14 +104,16 @@ export function Header({
           <IconButton
             label="Settings"
             pressed={settingsOpen}
-            onMouseDown={(event) => startDrag(event, onSettings)}
+            onMouseDown={startDrag}
+            onClick={onSettings}
           >
             <SettingsIcon size={iconSize} strokeWidth={iconStroke} />
           </IconButton>
 
           <IconButton
             label="Hide"
-            onMouseDown={(event) => startDrag(event, () => send({ type: 'hide' }))}
+            onMouseDown={startDrag}
+            onClick={() => send({ type: 'hide' })}
           >
             <CloseIcon size={iconSize} strokeWidth={iconStroke} />
           </IconButton>

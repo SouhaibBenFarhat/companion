@@ -1,6 +1,5 @@
 import { send } from '../lib/bridge'
-import { IconButton, Menu, MenuItem } from '../ui'
-import { DeleteIcon } from '../ui/icons'
+import { Menu, MenuItem } from '../ui'
 import type { ConversationSummary } from '../lib/types'
 
 export function HistoryMenu({
@@ -28,19 +27,7 @@ export function HistoryMenu({
           selected={conversation.id === currentId}
           label={conversation.title}
           onSelect={() => send({ type: 'selectConversation', id: conversation.id })}
-          trailing={
-            <IconButton
-              label="Delete conversation"
-              size="xs"
-              tone="danger"
-              onClick={(event) => {
-                event.stopPropagation()
-                send({ type: 'deleteConversation', id: conversation.id })
-              }}
-            >
-              <DeleteIcon size={12} strokeWidth={2} />
-            </IconButton>
-          }
+          onDelete={() => send({ type: 'deleteConversation', id: conversation.id })}
         />
       ))}
     </Menu>

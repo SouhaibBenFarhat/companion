@@ -94,12 +94,18 @@ export function Well({ children }: { children: React.ReactNode }) {
  *
  * No `data-field`: this always sits inside a `Well`, and the well's border
  * already shows the focus. Marking both drew two rings around the composer.
+ *
+ * `ref` is destructured on purpose. React 19 passes it as an ordinary prop, so
+ * leaving it in `...props` put the caller's ref after this one in the spread
+ * and the internal ref stayed null — which killed Enter-to-send, the growing,
+ * and focus-on-summon, all silently.
  */
 export function AutoTextarea({
   min,
   max,
   submit,
   resetToken,
+  ref,
   ...props
 }: Omit<React.ComponentPropsWithRef<'textarea'>, 'className' | 'style' | 'onKeyDown'> & {
   min: number
@@ -121,11 +127,21 @@ export function AutoTextarea({
     field.style.height = `${Math.min(Math.max(field.scrollHeight, min), max)}px`
   }
 
+  // Once, on mount: the field must open at its real height rather than
+  // snapping to it on the first keystroke.
+  useEffect(fit, [])
+
   return (
     <textarea
-      ref={element}
       spellCheck={false}
       {...props}
+      ref={(node) => {
+        element.current = node
+        if (typeof ref === 'function') ref(node)
+        // Never `return ref(node)` — React 19 reads a returned value as a
+        // cleanup function.
+        else if (ref) ref.current = node
+      }}
       onInput={fit}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' || event.shiftKey) return
@@ -137,7 +153,7 @@ export function AutoTextarea({
         fit()
       }}
       style={{ minHeight: min, maxHeight: max }}
-      className="selectable block w-full resize-none bg-transparent px-0.5 text-md leading-relaxed text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed"
+      className="selectable block w-full resize-none bg-transparent px-0.5 text-md leading-relaxed text-ink outline-none placeholder:text-muted"
     />
   )
 }

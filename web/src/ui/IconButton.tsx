@@ -18,42 +18,60 @@ type NativeButton = Omit<React.ComponentPropsWithRef<'button'>, 'className' | 'a
  * ships no Tooltip component. The system one is real, delayed correctly, and is
  * one fewer floating surface to dismiss in a panel where dismissal is the thing
  * that keeps breaking.
+ *
+ * `label` is a NAME — "Send", "History". When the tooltip needs to say more
+ * than the name, that goes in `hint`; the accessible name must not turn into a
+ * status sentence, or a screen reader announces "Microphone access is off,
+ * button" instead of telling the user what the control is.
  */
 export function IconButton({
   label,
+  hint,
   size = 'sm',
   tone = 'neutral',
+  activeTone,
   variant = 'ghost',
-  pressed = false,
+  pressed,
   badge = false,
   busy = false,
   children,
   ...props
 }: NativeButton & {
   label: string
+  /** Extra words for the tooltip only. Never part of the accessible name. */
+  hint?: string
   size?: Size
+  /** The resting look. Grey unless the control is meaningful at rest. */
   tone?: Tone
+  /** The look while held on. Defaults to `tone`. */
+  activeTone?: Tone
   variant?: Variant
-  /** A state the control holds, like listening. Not a hover. */
+  /**
+   * A state the control holds, like listening. Leave it out entirely for a
+   * one-shot action: `aria-pressed` on Send would announce it as a switch that
+   * is currently off.
+   */
   pressed?: boolean
   /** A dot, for a setting that changes behaviour and is otherwise invisible. */
   badge?: boolean
   /** Work in flight. Pulses rather than spinning — it is 14 points wide. */
   busy?: boolean
 }) {
+  const isOn = pressed === true
+
   return (
     <button
       type="button"
       data-pressable
-      data-pressed={pressed}
+      data-pressed={isOn}
       aria-label={label}
       aria-pressed={pressed}
-      title={label}
+      title={hint ?? label}
       {...props}
       className={cx(
         'relative grid shrink-0 place-items-center rounded-md',
         square[size],
-        pressed ? pressedTone[tone] : appearance[variant][tone],
+        isOn ? pressedTone[activeTone ?? tone] : appearance[variant][tone],
         busy && 'animate-pulse',
       )}
     >

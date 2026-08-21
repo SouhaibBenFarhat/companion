@@ -47,12 +47,12 @@ export function AgentMenu({
       open={open}
       onOpenChange={onOpenChange}
       trigger={
-        <Button variant="ghost" size="sm" tight pressed={open}>
+        <Button variant="ghost" size="sm" tight flexible pressed={open}>
           {/* Not found is an error, so it gets a dot — never the soft fill,
               which means "you armed something dangerous". */}
           {!agent.found && <span className="h-1.5 w-1.5 rounded-full bg-danger" aria-hidden="true" />}
           <span className="max-w-[var(--label-max)] truncate">{agent.title}</span>
-          <ChevronIcon size={12} strokeWidth={2} />
+          <ChevronIcon size={12} strokeWidth={2} className="shrink-0" />
         </Button>
       }
     >

@@ -52,7 +52,9 @@ export function ComposerControls({
   }
 
   return (
-    <div className="flex items-center gap-0.5">
+    // min-w-0 so the row can give up width instead of pushing Send out of a
+    // 320-point panel, which is the narrowest the window goes.
+    <div className="flex min-w-0 items-center gap-0.5">
       {/* Permission keeps its word at every width. A dangerous state must
           never be carried by a glyph alone. Arming costs two clicks;
           disarming costs one. */}
@@ -67,20 +69,28 @@ export function ComposerControls({
             tone={readOnly ? 'neutral' : 'accent'}
             size="sm"
             tight
+            flexible
             aria-pressed={!readOnly}
             title={
               readOnly
                 ? 'The agent can read this repo but not change it'
                 : 'The agent can change files in this repo'
             }
-            onClick={() => (readOnly ? setConfirmEdits(true) : setPermission('readOnly'))}
+            onClick={(event) => {
+              if (readOnly) return // let the trigger open the confirmation
+              // Disarming is one click and asks nothing. preventDefault stops
+              // Radix opening the popover as well, which made turning edits
+              // OFF pop up a box asking whether to turn them on.
+              event.preventDefault()
+              setPermission('readOnly')
+            }}
           >
             {readOnly ? (
-              <ReadOnlyIcon size={13} strokeWidth={1.9} />
+              <ReadOnlyIcon size={13} strokeWidth={1.9} className="shrink-0" />
             ) : (
-              <EditsIcon size={13} strokeWidth={1.9} />
+              <EditsIcon size={13} strokeWidth={1.9} className="shrink-0" />
             )}
-            <span>{readOnly ? 'Read only' : 'Can edit'}</span>
+            <span className="truncate">{readOnly ? 'Read only' : 'Can edit'}</span>
           </Button>
         }
       >
@@ -113,9 +123,10 @@ export function ComposerControls({
           The badge marks the one combination that changes behaviour without
           being visible at rest. */}
       <IconButton
-        label={permissions.canListen ? 'Follow both sides of the call' : permissions.summary}
+        label="Listen to the call"
+        hint={permissions.canListen ? 'Follow both sides of the call' : permissions.summary}
         pressed={listening.active}
-        tone="accent"
+        activeTone="accent"
         badge={listening.active && settings.suggestionsEnabled}
         onClick={() =>
           permissions.canListen ? send({ type: 'toggleListening' }) : onOpenPermissions()
@@ -132,13 +143,15 @@ export function ComposerControls({
           which is exact and free; a picture is for the cases with no text —
           a diagram, a rendered page, a canvas. */}
       <IconButton
-        label={
+        label="Attach a picture of your screen"
+        hint={
           screenshot === 'ready'
             ? 'A picture of your window will go with the next message'
             : 'Attach a picture of the window in front'
         }
         pressed={screenshot === 'ready'}
-        tone={screenshot === 'failed' ? 'danger' : 'accent'}
+        tone={screenshot === 'failed' ? 'danger' : 'neutral'}
+        activeTone="accent"
         busy={screenshot === 'capturing'}
         onClick={() => send({ type: 'lookAtScreen' })}
       >

@@ -658,6 +658,13 @@ extension PanelController: WKScriptMessageHandler {
             // while the panel was open.
             sendState()
 
+        case "openLink":
+            // A link in an answer must not navigate the panel. There is no
+            // address bar and no back button here, so following one inside the
+            // web view loses the conversation with no way back.
+            guard let raw = body["url"] as? String, let url = ExternalLink.url(from: raw) else { return }
+            NSWorkspace.shared.open(url)
+
         case "signIn":
             SignIn.openTerminal(
                 agent: settings.agent,

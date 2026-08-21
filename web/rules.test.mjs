@@ -15,7 +15,8 @@ import { join } from 'node:path'
 const files = (dir) =>
   readdirSync(dir).flatMap((name) => {
     const path = join(dir, name)
-    return statSync(path).isDirectory() ? files(path) : path.endsWith('.tsx') || path.endsWith('.ts') ? [path] : []
+    if (statSync(path).isDirectory()) return files(path)
+    return /\.(tsx|ts|css)$/.test(path) ? [path] : []
   })
 
 const KIT = 'src/ui'
@@ -28,7 +29,9 @@ const check = (path, line, number, message) =>
 for (const path of files('src')) {
   const source = readFileSync(path, 'utf8')
   const isView = path.startsWith(VIEWS)
-  const isToken = path.startsWith(KIT) && path.endsWith('.css')
+  // The one file the rule names — not the whole kit directory, which is how
+  // every stylesheet in it was escaping the check.
+  const isToken = path === join(KIT, 'tokens.css')
 
   source.split('\n').forEach((line, index) => {
     const number = index + 1
@@ -39,7 +42,9 @@ for (const path of files('src')) {
     if (!isToken && /-\[(#|\d|oklch|rgb|hsl)/.test(line)) {
       check(path, line, number, 'raw value in a class — add a token in ui/tokens.css')
     }
-    if (!isToken && /\boklch\(|#[0-9a-fA-F]{3,8}\b/.test(line)) {
+    // `oklch(from …)` is the derived-state mechanism and belongs everywhere.
+    // A literal `oklch(62% …)` does not.
+    if (!isToken && /\boklch\((?!from\b)|#[0-9a-fA-F]{3,8}\b/.test(line)) {
       check(path, line, number, 'colour literal outside ui/tokens.css')
     }
     // An opacity modifier is a colour nobody named. `bg-accent/12` is invisible

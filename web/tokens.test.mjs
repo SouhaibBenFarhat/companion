@@ -45,8 +45,9 @@ const EXEMPT = new Set([
 ])
 
 /** Surfaces that host pressable rows, so a hover is derived from them.
- *  An input well and the conversation well never darken under the pointer. */
-const HOVERABLE = ['chrome', 'card', 'overlay']
+ *  Not 'input': base.css re-bases anything pressable inside the input well to
+ *  --s-3, because stepping --s-0 darker drove muted text under its floor. */
+const HOVERABLE = ['chrome', 'card', 'overlay', 'well']
 
 /** Which surfaces a thing can actually land on. */
 const CAN_TOUCH = {

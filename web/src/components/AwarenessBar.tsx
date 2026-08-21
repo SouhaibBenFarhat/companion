@@ -38,8 +38,11 @@ export function AwarenessBar({
   if (!listening.active && !error) return null
 
   return (
+    // Capped and scrollable. Header plus this plus the composer used to add up
+    // to more than the whole window at its 320x240 minimum, and the composer
+    // fell off the bottom with no way to reach it.
     <Bar edge="bottom">
-      <div className="px-3 py-2">
+      <div className="max-h-[var(--awareness-max)] overflow-y-auto px-3 py-2">
         {error ? (
           <p className="text-xs leading-relaxed text-danger-text">{error}</p>
         ) : (

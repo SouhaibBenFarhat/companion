@@ -149,18 +149,18 @@
 .hljs-selector-tag,
 .hljs-literal,
 .hljs-built_in {
-  color: oklch(50% 0.18 300);
+  color: var(--c-code-keyword);
 }
 
 .hljs-string,
 .hljs-regexp,
 .hljs-addition {
-  color: oklch(46% 0.13 150);
+  color: var(--c-code-string);
 }
 
 .hljs-number,
 .hljs-symbol {
-  color: oklch(50% 0.14 60);
+  color: var(--c-code-number);
 }
 
 .hljs-comment,
@@ -174,30 +174,5 @@
 .hljs-attr,
 .hljs-attribute,
 .hljs-type {
-  color: oklch(45% 0.15 245);
-}
-
-@media (prefers-color-scheme: dark) {
-  .hljs-keyword,
-  .hljs-selector-tag,
-  .hljs-literal,
-  .hljs-built_in {
-    color: oklch(78% 0.13 300);
-  }
-  .hljs-string,
-  .hljs-regexp,
-  .hljs-addition {
-    color: oklch(80% 0.12 150);
-  }
-  .hljs-number,
-  .hljs-symbol {
-    color: oklch(82% 0.12 70);
-  }
-  .hljs-title,
-  .hljs-name,
-  .hljs-attr,
-  .hljs-attribute,
-  .hljs-type {
-    color: oklch(80% 0.11 245);
-  }
+  color: var(--c-code-title);
 }

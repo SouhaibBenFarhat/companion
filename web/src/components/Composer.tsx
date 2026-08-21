@@ -34,7 +34,6 @@ export function Composer({
         <Well>
           <AutoTextarea
             ref={field}
-            rows={3}
             min={MIN_HEIGHT}
             max={MAX_HEIGHT}
             disabled={disabled}

@@ -103,7 +103,7 @@ export function SettingsSheet({
 
       <Group title="Repo">
         <Field label="Folder the agent runs in" hint={repository}>
-          <Button full onClick={() => send({ type: 'pickRepository' })}>
+          <Button size="md" full onClick={() => send({ type: 'pickRepository' })}>
             <FolderIcon size={iconSize} strokeWidth={iconStroke} />
             Choose folder…
           </Button>

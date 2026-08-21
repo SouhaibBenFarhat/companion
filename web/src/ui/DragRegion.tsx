@@ -11,10 +11,22 @@ const SLOP = 4
  * the region reports movement and Swift moves the panel. Screen coordinates,
  * because they do not shift as the window follows the pointer.
  *
- * This was spread across eight call sites in two files before the kit.
+ * A control inside a drag region keeps its own `onClick`. That matters for two
+ * reasons: the click fires for the keyboard as well as the mouse, and only one
+ * drag session starts per press. Doing the click from here instead meant the
+ * button's own mousedown AND the strip's mousedown each started a session, so
+ * the window moved twice as far as the pointer — and Tab plus Enter did nothing
+ * at all, because no mousedown ever happened.
+ *
+ * When the press really did drag, the click that follows is swallowed, so
+ * letting go over a button does not also press it.
  */
-export function startDrag(event: React.MouseEvent, onClick?: () => void): void {
+export function startDrag(event: React.MouseEvent): void {
   if (event.button !== 0) return
+
+  // The innermost region owns the press. Without this the strip underneath
+  // starts a second session on the same event.
+  event.stopPropagation()
   event.preventDefault()
 
   let lastX = event.screenX
@@ -38,8 +50,14 @@ export function startDrag(event: React.MouseEvent, onClick?: () => void): void {
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', stop)
     document.body.style.cursor = previousCursor
-    // A control inside a drag region still does its job on a plain click.
-    if (travelled < SLOP) onClick?.()
+
+    if (travelled < SLOP) return
+    // Dropping the window over a button must not press it. One capture-phase
+    // listener, removed by its own `once`, so nothing outlives the drag.
+    window.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation() }, {
+      capture: true,
+      once: true,
+    })
   }
 
   window.addEventListener('mousemove', move)
@@ -52,7 +70,7 @@ export function DragRegion({
   ...props
 }: Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { children: React.ReactNode }) {
   return (
-    <div onMouseDown={(event) => startDrag(event)} className="cursor-grab active:cursor-grabbing" {...props}>
+    <div onMouseDown={startDrag} className="cursor-grab active:cursor-grabbing" {...props}>
       {children}
     </div>
   )

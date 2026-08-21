@@ -56,6 +56,14 @@
 
   --on-fill: oklch(99% 0 285);
 
+  /* Syntax colours. Here rather than beside the highlighter's rules, so they
+     are covered by the gamut and contrast checks like every other colour —
+     four of them were outside sRGB while they lived in index.css. */
+  --k-keyword: oklch(50% 0.18 300);
+  --k-string: oklch(46% 0.125 150);
+  --k-number: oklch(50% 0.115 60);
+  --k-title: oklch(45% 0.11 245);
+
   /* Surfaces stay see-through so the material behind the panel shows. */
   --alpha-well: 0.74;
   --alpha-chrome: 0.84;
@@ -96,6 +104,11 @@
     --d-text: oklch(85% 0.08 25);
     --d-soft: oklch(32% 0.055 25);
 
+    --k-keyword: oklch(78% 0.13 300);
+    --k-string: oklch(80% 0.12 150);
+    --k-number: oklch(82% 0.12 70);
+    --k-title: oklch(80% 0.105 245);
+
     --alpha-well: 0.62;
     --alpha-chrome: 0.74;
     --alpha-card: 0.94;
@@ -131,6 +144,11 @@
   --c-accent-text: var(--a-text);
   --c-accent-soft: var(--a-soft);
   --c-accent-fg: var(--on-fill);
+
+  --c-code-keyword: var(--k-keyword);
+  --c-code-string: var(--k-string);
+  --c-code-number: var(--k-number);
+  --c-code-title: var(--k-title);
 
   --c-danger: var(--d-fill);
   --c-danger-text: var(--d-text);
@@ -183,6 +201,9 @@
   --menu-w: 210px;
   --bubble-max: 85%;
   --label-max: 11rem;
+
+  /* The listening bar never takes more than this much of the window. */
+  --awareness-max: 30vh;
 
   /* Caps need air; lowercase does not. */
   --tracking-caps: 0.09em;
