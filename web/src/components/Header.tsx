@@ -1,6 +1,15 @@
 import { send } from '../lib/bridge'
 import { Bar, Button, GrabHandle, IconButton, startDrag } from '../ui'
-import { ChatIcon, CloseIcon, HistoryIcon, NewIcon, SettingsIcon, iconSize, iconStroke } from '../ui/icons'
+import {
+  ChatIcon,
+  CloseIcon,
+  FolderIcon,
+  HistoryIcon,
+  NewIcon,
+  SettingsIcon,
+  iconSize,
+  iconStroke,
+} from '../ui/icons'
 import { HistoryMenu } from './HistoryMenu'
 import type { ConversationSummary } from '../lib/types'
 
@@ -21,6 +30,7 @@ import type { ConversationSummary } from '../lib/types'
  */
 export function Header({
   repository,
+  hasRepository,
   conversations,
   currentId,
   historyOpen,
@@ -30,6 +40,7 @@ export function Header({
   onSettings,
 }: {
   repository: string
+  hasRepository: boolean
   conversations: ConversationSummary[]
   currentId: string
   historyOpen: boolean
@@ -38,7 +49,10 @@ export function Header({
   onHistoryOpenChange: (open: boolean) => void
   onSettings: () => void
 }) {
-  const name = repository.split('/').filter(Boolean).pop() ?? repository
+  // Without a folder the agent runs in your home directory, and the name of
+  // that folder looks exactly like a project name. Saying so is the difference
+  // between "this repo" meaning your code and it meaning your whole Mac.
+  const name = hasRepository ? (repository.split('/').filter(Boolean).pop() ?? repository) : 'No folder'
 
   return (
     <Bar edge="bottom" onMouseDown={startDrag}>
@@ -54,10 +68,16 @@ export function Header({
               variant="ghost"
               size="sm"
               tight
-              title={`${repository} — click to change, drag to move`}
+              tone={hasRepository ? 'neutral' : 'danger'}
+              title={
+                hasRepository
+                  ? `${repository} — click to change, drag to move`
+                  : `No project folder chosen. The agent is running in ${repository}. Click to pick one.`
+              }
               onMouseDown={startDrag}
               onClick={() => send({ type: 'pickRepository' })}
             >
+              {!hasRepository && <FolderIcon size={12} strokeWidth={2} className="shrink-0" />}
               <span className="max-w-[var(--label-max)] truncate font-medium">{name}</span>
             </Button>
           </span>

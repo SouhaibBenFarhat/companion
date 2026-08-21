@@ -57,9 +57,17 @@ export const appearance: Record<Variant, Record<Tone, string>> = {
   },
 }
 
-/** Pressed is a state a control holds, not a hover. Soft fill, accent text. */
+/**
+ * Pressed is a state a control holds, not a hover.
+ *
+ * A tint, never a surface step. In the light ramp every surface above the
+ * chrome is pure white — s-4, s-5 and s-6 are all 100% — so a held control
+ * that raised itself a step had nothing to raise itself against, and the lit
+ * button in the header was invisible. A tint separates on hue as well as
+ * lightness, which works in both appearances.
+ */
 export const pressed: Record<Tone, string> = {
-  neutral: 'bg-control text-ink [--surface:var(--s-4)]',
+  neutral: 'bg-accent-soft text-accent-text [--surface:var(--a-soft)]',
   accent: 'bg-accent-soft text-accent-text [--surface:var(--a-soft)]',
   danger: 'bg-danger-soft text-danger-text [--surface:var(--d-soft)]',
 }

@@ -121,6 +121,7 @@ export function App() {
     <div className="relative flex h-full flex-col bg-well">
       <Header
         repository={state.repository}
+        hasRepository={state.hasRepository}
         conversations={state.conversations}
         currentId={state.currentId}
         historyOpen={showHistory}
@@ -157,6 +158,7 @@ export function App() {
           settings={state.settings}
           agent={state.agent}
           repository={state.repository}
+          hasRepository={state.hasRepository}
           permissions={state.permissions}
           inputDevices={state.inputDevices}
           onClose={() => setShowSettings(false)}

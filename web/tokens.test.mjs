@@ -93,7 +93,25 @@ const ROLE_OF = {
   ink: 't-3', muted: 't-2', faint: 't-1',
   line: 'b-1', 'line-strong': 'b-2',
   'accent-text': 'a-text', 'danger-text': 'd-text',
+  'accent-soft': 'a-soft', 'danger-soft': 'd-soft',
 }
+
+/** The fills a control wears while it is held on, and the text on each. */
+const PRESSED = [
+  ['accent-soft', 'accent-text'],
+  ['danger-soft', 'danger-text'],
+]
+
+/** Where a held fill actually appears: the header strip, and the composer's
+ *  toolbar. Menus mark their choice with a tick instead. */
+const PRESSED_ON = ['chrome', 'input']
+
+/** Higher than the surface floor on purpose. A boundary between two panes only
+ *  has to be findable; a control that is switched on has to be noticed without
+ *  being looked for. The header's lit button used the control surface, which
+ *  measures 0.0253 against the strip behind it — inside the surface floor, and
+ *  invisible in use. */
+const PRESSED_FLOOR = 0.04
 
 // ---------------------------------------------------------------------------
 // Colour maths
@@ -221,6 +239,23 @@ for (const appearance of ['light', 'dark']) {
     const d = distance(colour(surface), line)
     if (d < SURFACE_FLOOR) {
       failures.push(`${appearance} ${surface}/divider  dE ${d.toFixed(4)}  (floor ${SURFACE_FLOOR})`)
+    }
+  }
+
+  // A control that is held on has to be obvious against whatever it sits on.
+  // This is the check that was missing. In the light ramp every surface above
+  // the chrome is pure white, so a held control that raised itself a step had
+  // nothing to raise itself against.
+  for (const [fill, text] of PRESSED) {
+    for (const surface of PRESSED_ON) {
+      const d = distance(colour(surface), colour(fill))
+      if (d < PRESSED_FLOOR) {
+        failures.push(`${appearance} ${fill} held on ${surface}  dE ${d.toFixed(4)}  (floor ${PRESSED_FLOOR})`)
+      }
+      const lc = apca(colour(text), colour(fill))
+      if (lc < TEXT_FLOORS[text]) {
+        failures.push(`${appearance} ${text} on ${fill}  Lc ${lc.toFixed(1)}  (floor ${TEXT_FLOORS[text]})`)
+      }
     }
   }
 

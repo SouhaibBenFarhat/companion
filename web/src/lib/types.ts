@@ -37,6 +37,8 @@ export interface SettingsPayload {
   hideFromScreenShare: boolean
   /** The chosen microphone is not plugged in right now. */
   microphoneMissing: boolean
+  /** 'system', 'light' or 'dark'. */
+  theme: string
 }
 
 export type PermissionId = 'microphone' | 'systemAudio' | 'accessibility'
@@ -100,6 +102,8 @@ export interface StatePayload {
   repository: string
   permissions: Permissions
   inputDevices: InputDevice[]
+  /** False means no folder was chosen and the agent is running in $HOME. */
+  hasRepository: boolean
   listening: ListeningState
   currentId: string
   conversations: ConversationSummary[]
@@ -150,4 +154,5 @@ export type Outgoing =
       suggestionsEnabled?: boolean
       microphoneDeviceUID?: string
       hideFromScreenShare?: boolean
+      theme?: string
     }

@@ -1,6 +1,17 @@
 import { useState } from 'react'
 import { send } from '../lib/bridge'
-import { Button, Field, GroupTitle, Input, Notice, Select, Sheet, Textarea, Toggle } from '../ui'
+import {
+  Button,
+  Field,
+  GroupTitle,
+  Input,
+  Notice,
+  Segmented,
+  Select,
+  Sheet,
+  Textarea,
+  Toggle,
+} from '../ui'
 import { FolderIcon, iconSize, iconStroke } from '../ui/icons'
 import { Permissions } from './Permissions'
 import type {
@@ -33,6 +44,7 @@ export function SettingsSheet({
   settings,
   agent,
   repository,
+  hasRepository,
   permissions,
   inputDevices,
   onClose,
@@ -40,6 +52,7 @@ export function SettingsSheet({
   settings: SettingsPayload
   agent: AgentInfo
   repository: string
+  hasRepository: boolean
   permissions: PermissionsPayload
   inputDevices: InputDevice[]
   onClose: () => void
@@ -58,6 +71,7 @@ export function SettingsSheet({
       suggestionsEnabled: next.suggestionsEnabled,
       microphoneDeviceUID: next.microphoneDeviceUID,
       hideFromScreenShare: next.hideFromScreenShare,
+      theme: next.theme,
     })
   }
 
@@ -102,6 +116,13 @@ export function SettingsSheet({
       </Group>
 
       <Group title="Repo">
+        {!hasRepository && (
+          <Notice>
+            No folder chosen, so the agent is running in {repository} — your home folder, not a
+            project. Pick one and "this repo" starts meaning your code.
+          </Notice>
+        )}
+
         <Field label="Folder the agent runs in" hint={repository}>
           <Button size="md" full onClick={() => send({ type: 'pickRepository' })}>
             <FolderIcon size={iconSize} strokeWidth={iconStroke} />
@@ -156,6 +177,24 @@ export function SettingsSheet({
           checked={draft.suggestionsEnabled}
           onChange={(value) => apply({ suggestionsEnabled: value })}
         />
+      </Group>
+
+      <Group title="Appearance">
+        <Field
+          label="Light or dark"
+          hint="Set on the window, so the blurred material behind the panel changes with it. Following the system is the usual choice; pick one outright when you are presenting on a projector."
+        >
+          <Segmented
+            label="Light or dark"
+            value={draft.theme}
+            onChange={(theme) => apply({ theme })}
+            options={[
+              { value: 'system', label: 'System' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+          />
+        </Field>
       </Group>
 
       <Group title="Screen share">

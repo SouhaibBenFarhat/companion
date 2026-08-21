@@ -114,6 +114,7 @@ final class PanelController: NSObject {
             MainActor.assumeIsolated { self?.fitToScreen() }
         }
         panel.isHiddenFromScreenShare = settings.hideFromScreenShare
+        applyAppearance()
 
         awareness.updateRepository(settings.repositoryURL())
         awareness.preferredInputUID = settings.microphoneDeviceUID
@@ -174,6 +175,23 @@ final class PanelController: NSObject {
         image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
         image.resizingMode = .stretch
         return image
+    }
+
+    // MARK: - Appearance
+
+    /// Light, dark, or whatever macOS is doing.
+    ///
+    /// Set on the window, not on the page. The panel is a blurred AppKit
+    /// material with a web view on top: the window's appearance drives that
+    /// material AND the `prefers-color-scheme` the page reads, so the two
+    /// cannot disagree. Styling the page alone would leave a light blur behind
+    /// dark content.
+    private func applyAppearance() {
+        switch settings.theme {
+        case .system: panel.appearance = nil
+        case .light: panel.appearance = NSAppearance(named: .aqua)
+        case .dark: panel.appearance = NSAppearance(named: .darkAqua)
+        }
     }
 
     // MARK: - Staying on screen
@@ -328,7 +346,11 @@ final class PanelController: NSObject {
             prompt: prompt,
             workingDirectory: settings.repositoryURL(),
             sessionID: nil,
-            systemPrompt: AwarenessPrompt.watchingInstruction,
+            systemPrompt: AgentContext.systemPrompt(
+                repository: settings.repositoryURL(),
+                hasRepository: settings.hasRepository,
+                watching: AwarenessPrompt.watchingInstruction
+            ),
             permission: .readOnly
         )
 
@@ -439,6 +461,8 @@ final class PanelController: NSObject {
                 "persistTranscript": settings.awareness.persistTranscript,
                 "microphoneDeviceUID": settings.microphoneDeviceUID,
                 "hideFromScreenShare": settings.hideFromScreenShare,
+                "theme": settings.theme.rawValue,
+                "hasRepository": settings.hasRepository,
                 "microphoneMissing": AudioInputSelection.isPreferredMissing(
                     preferredUID: settings.microphoneDeviceUID,
                     available: AudioDevices.inputs()
@@ -530,7 +554,12 @@ final class PanelController: NSObject {
             prompt: prompt,
             workingDirectory: settings.repositoryURL(),
             sessionID: current.agentSessionID,
-            systemPrompt: settings.systemPrompt,
+            systemPrompt: AgentContext.systemPrompt(
+                repository: settings.repositoryURL(),
+                hasRepository: settings.hasRepository,
+                watching: isListening ? AwarenessPrompt.watchingInstruction : "",
+                extra: settings.systemPrompt
+            ),
             permission: settings.permission
         )
 
@@ -740,6 +769,10 @@ extension PanelController: WKScriptMessageHandler {
                 }
             }
 
+            if let raw = body["theme"] as? String, let theme = Appearance(rawValue: raw), theme != settings.theme {
+                settings.theme = theme
+                applyAppearance()
+            }
             if let value = body["hideFromScreenShare"] as? Bool, value != settings.hideFromScreenShare {
                 settings.hideFromScreenShare = value
                 panel.isHiddenFromScreenShare = value
