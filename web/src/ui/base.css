@@ -91,11 +91,23 @@ textarea:disabled {
 [data-surface='input'] { --surface: var(--s-0); background-color: var(--c-input); }
 [data-surface='code'] { --surface: var(--s-2); background-color: var(--c-code); }
 
+/* A hairline, derived rather than fixed. --c-line is tuned for the panel's
+   chrome; on the darkest surface in the set it either vanishes or reads as a
+   border. A step from the surface it lies on works on any of them. */
+[data-divider] {
+  height: 1px;
+  background-color: oklch(from var(--surface) calc(l + var(--divider-step)) c h);
+}
+
 /* The composer's toolbar sits inside the input well but is raised above it.
    Stepping its hover from --s-0, the darkest light surface, put muted text at
    APCA Lc 56.6 against a floor of 60. A raised control steps from the chrome
    behind the composer, not from the hole it sits in. */
-[data-surface='input'] [data-pressable] {
+/* :where() so this counts for nothing. It is a default for the plain controls
+   in the toolbar; a filled button that declares its own --surface — Send —
+   must keep it, or its hover steps from the chrome and the purple turns grey
+   under the pointer. */
+:where([data-surface='input'] [data-pressable]) {
   --surface: var(--s-3);
 }
 

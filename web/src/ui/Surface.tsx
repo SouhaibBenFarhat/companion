@@ -82,5 +82,5 @@ export function Sheet({ children, action }: { children: React.ReactNode; action?
 }
 
 export function Divider() {
-  return <div className="h-px" style={{ background: 'var(--c-line)' }} />
+  return <div data-divider aria-hidden="true" />
 }

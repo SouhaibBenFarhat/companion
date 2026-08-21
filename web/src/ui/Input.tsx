@@ -65,6 +65,9 @@ export function Select({
 /**
  * The container the composer's text area and its toolbar share.
  *
+ * It pads nothing. Each section inside pads itself, so the divider between them
+ * runs edge to edge instead of stopping short of the border.
+ *
  * A recessed well, not another raised card: the field reads as a hole in the
  * chrome rather than a box sitting on top of it. `data-well` is what turns its
  * border accent when anything inside takes focus, so no view writes a focus
@@ -76,7 +79,7 @@ export function Well({ children }: { children: React.ReactNode }) {
     <div
       data-well
       data-surface="input"
-      className="rounded-lg border border-line-strong px-2.5 pb-1.5 pt-2.5 transition-colors"
+      className="overflow-hidden rounded-lg border border-line-strong transition-colors"
     >
       {children}
     </div>

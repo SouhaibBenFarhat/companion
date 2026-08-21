@@ -168,5 +168,5 @@ export function MenuItem({
 }
 
 export function MenuDivider() {
-  return <DropdownMenu.Separator className="my-1 h-px" style={{ background: 'var(--c-line)' }} />
+  return <DropdownMenu.Separator data-divider className="my-1" />
 }

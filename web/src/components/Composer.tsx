@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { send } from '../lib/bridge'
-import { AutoTextarea, Bar, Button, DragRegion, Hint, IconButton, Well } from '../ui'
-import { SendIcon, iconStroke } from '../ui/icons'
+import { AutoTextarea, Bar, Divider, DragRegion, Hint, IconButton, Well } from '../ui'
+import { SendIcon, StopIcon, iconStroke } from '../ui/icons'
 
 /** Roughly three lines at rest, eight before it scrolls. */
 const MIN_HEIGHT = 58
@@ -28,48 +28,63 @@ export function Composer({
     return true
   }
 
+  const sendNow = () => {
+    if (!field.current) return
+    if (!submit(field.current.value.trim())) return
+    field.current.value = ''
+    field.current.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
   return (
     <Bar edge="top">
       <div className="p-2.5">
         <Well>
-          <AutoTextarea
-            ref={field}
-            min={MIN_HEIGHT}
-            max={MAX_HEIGHT}
-            disabled={disabled}
-            submit={submit}
-            // Focus follows the panel being summoned, and returns when an
-            // answer finishes.
-            resetToken={`${focusToken}:${busy}`}
-            placeholder={disabled ? 'No agent found' : 'Ask about this repo…'}
-          />
+          {/* Send sits with the writing, not with the settings. It is the one
+              control that acts on what you typed, and at the end of the text is
+              where your eye already is. */}
+          <div className="flex items-end gap-1.5 px-2.5 pb-1.5 pt-2.5">
+            <div className="min-w-0 flex-1">
+              <AutoTextarea
+                ref={field}
+                min={MIN_HEIGHT}
+                max={MAX_HEIGHT}
+                disabled={disabled}
+                submit={submit}
+                // Focus follows the panel being summoned, and returns when an
+                // answer finishes.
+                resetToken={`${focusToken}:${busy}`}
+                placeholder={disabled ? 'No agent found' : 'Ask about this repo…'}
+              />
+            </div>
 
-          {/* Settings on the left, send on the right, one line. Inside the well
-              rather than above it — everything shipped puts them here, and above
-              the box is where things go when they are meant to disappear. */}
-          <div className="flex items-center gap-1.5 pt-1">
-            {controls}
-            <span className="flex-1" />
-            {busy && (
-              <Button variant="ghost" size="sm" onClick={() => send({ type: 'cancel' })}>
-                Stop
-              </Button>
+            {/* One slot, one meaning: the button that starts the answer is the
+                button that stops it. */}
+            {busy ? (
+              <IconButton
+                label="Stop"
+                variant="filled"
+                tone="neutral"
+                onClick={() => send({ type: 'cancel' })}
+              >
+                <StopIcon size={13} strokeWidth={iconStroke} />
+              </IconButton>
+            ) : (
+              <IconButton
+                label="Send"
+                variant="filled"
+                tone="accent"
+                disabled={disabled}
+                onClick={sendNow}
+              >
+                <SendIcon size={15} strokeWidth={iconStroke} />
+              </IconButton>
             )}
-            <IconButton
-              label="Send"
-              variant="filled"
-              tone="accent"
-              disabled={disabled || busy}
-              onClick={() => {
-                if (!field.current) return
-                if (!submit(field.current.value.trim())) return
-                field.current.value = ''
-                field.current.dispatchEvent(new Event('input', { bubbles: true }))
-              }}
-            >
-              <SendIcon size={15} strokeWidth={iconStroke} />
-            </IconButton>
           </div>
+
+          {/* Splits what you are writing from what it will be written with. */}
+          <Divider />
+
+          <div className="flex min-w-0 items-center gap-1.5 px-2 py-1.5">{controls}</div>
         </Well>
 
         {/* Dead space otherwise, so it earns its keep as a second grab area. */}
