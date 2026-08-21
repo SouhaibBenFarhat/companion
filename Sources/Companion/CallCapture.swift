@@ -41,6 +41,8 @@ final class CallCapture {
     private var restartState = CaptureRestartPolicy.State()
     private let restartPolicy = CaptureRestartPolicy()
     private var settings = AwarenessSettings()
+    /// Which microphone to open. Empty means the system default.
+    var preferredInputUID = ""
 
     /// How often to move audio from the rings to the transcriber.
     private static let pumpInterval: TimeInterval = 0.1
@@ -56,7 +58,14 @@ final class CallCapture {
 
         if settings.captureMicrophone {
             do {
-                try microphone?.start(echoCancellation: settings.echoCancellationEnabled)
+                let chosen = AudioInputSelection.resolve(
+                    preferredUID: preferredInputUID,
+                    available: AudioDevices.inputs()
+                )
+                try microphone?.start(
+                    echoCancellation: settings.echoCancellationEnabled,
+                    device: chosen
+                )
             } catch {
                 report(error.localizedDescription)
             }

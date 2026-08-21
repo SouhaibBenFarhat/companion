@@ -153,6 +153,7 @@ export function App() {
           agent={state.agent}
           repository={state.repository}
           permissions={state.permissions}
+          inputDevices={state.inputDevices}
           onClose={() => setShowSettings(false)}
         />
       ) : (

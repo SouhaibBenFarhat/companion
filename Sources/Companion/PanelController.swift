@@ -96,8 +96,10 @@ final class PanelController: NSObject {
         panel.contentView = backdrop
         backdrop.addSubview(webView)
         panel.delegate = self
+        panel.isHiddenFromScreenShare = settings.hideFromScreenShare
 
         awareness.updateRepository(settings.repositoryURL())
+        awareness.preferredInputUID = settings.microphoneDeviceUID
 
         awareness.onLevels = { [weak self] levels in
             // Its own message, never through `state` — the page resets the
@@ -377,8 +379,21 @@ final class PanelController: NSObject {
                 "systemPrompt": settings.systemPrompt,
                 "suggestionsEnabled": settings.awareness.suggestionsEnabled,
                 "persistTranscript": settings.awareness.persistTranscript,
+                "microphoneDeviceUID": settings.microphoneDeviceUID,
+                "hideFromScreenShare": settings.hideFromScreenShare,
+                "microphoneMissing": AudioInputSelection.isPreferredMissing(
+                    preferredUID: settings.microphoneDeviceUID,
+                    available: AudioDevices.inputs()
+                ),
             ],
             "repository": settings.repositoryURL().path,
+            "inputDevices": AudioDevices.inputs().map { device in
+                [
+                    "uid": device.uid,
+                    "name": device.name,
+                    "isSystemDefault": device.isSystemDefault,
+                ]
+            },
             "listening": [
                 "active": awareness.isListening,
                 "callApp": awareness.callAppName ?? "",
@@ -642,6 +657,23 @@ extension PanelController: WKScriptMessageHandler {
             }
             if let prompt = body["systemPrompt"] as? String { settings.systemPrompt = prompt }
             if let value = body["suggestionsEnabled"] as? Bool { settings.awareness.suggestionsEnabled = value }
+
+            if let uid = body["microphoneDeviceUID"] as? String, uid != settings.microphoneDeviceUID {
+                settings.microphoneDeviceUID = uid
+                awareness.preferredInputUID = uid
+                // A device cannot be swapped underneath a running engine, so a
+                // change while listening restarts capture.
+                if awareness.isListening {
+                    stopListening()
+                    startListening()
+                }
+            }
+
+            if let value = body["hideFromScreenShare"] as? Bool, value != settings.hideFromScreenShare {
+                settings.hideFromScreenShare = value
+                panel.isHiddenFromScreenShare = value
+                SessionLog.shared.write("panel", "hidden from screen share: \(value)")
+            }
             AgentProbe.forget()
             persistSettings()
             sendState()

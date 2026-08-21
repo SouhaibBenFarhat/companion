@@ -31,6 +31,12 @@ export interface SettingsPayload {
   /** Whether Companion may speak without being asked. */
   suggestionsEnabled: boolean
   persistTranscript: boolean
+  /** Empty means the system default. */
+  microphoneDeviceUID: string
+  /** Whether screen capture skips the panel. */
+  hideFromScreenShare: boolean
+  /** The chosen microphone is not plugged in right now. */
+  microphoneMissing: boolean
 }
 
 export type PermissionId = 'microphone' | 'systemAudio' | 'accessibility'
@@ -80,6 +86,12 @@ export interface Suggestion {
   reason: string
 }
 
+export interface InputDevice {
+  uid: string
+  name: string
+  isSystemDefault: boolean
+}
+
 export interface StatePayload {
   type: 'state'
   busy: boolean
@@ -87,6 +99,7 @@ export interface StatePayload {
   settings: SettingsPayload
   repository: string
   permissions: Permissions
+  inputDevices: InputDevice[]
   listening: ListeningState
   currentId: string
   conversations: ConversationSummary[]
@@ -133,4 +146,6 @@ export type Outgoing =
       permission?: string
       systemPrompt?: string
       suggestionsEnabled?: boolean
+      microphoneDeviceUID?: string
+      hideFromScreenShare?: boolean
     }

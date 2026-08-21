@@ -60,7 +60,10 @@ final class MicrophoneRecorder {
         }
     }
 
-    func start(echoCancellation: Bool) throws {
+    /// - Parameter device: which microphone to open. Nil takes the system
+    ///   default, which on a Mac with several is a coin toss — Continuity can
+    ///   hand it the iPhone microphone without warning.
+    func start(echoCancellation: Bool, device: AudioInputDevice? = nil) throws {
         stop()
         ring.reset()
 
@@ -69,6 +72,14 @@ final class MicrophoneRecorder {
         }
 
         let input = engine.inputNode
+
+        // Before anything else touches the engine: changing the device after
+        // the format is read would leave a converter built for the wrong one.
+        if let device {
+            if AudioDevices.use(device, on: engine) {
+                SessionLog.shared.write("mic", "using \(device.name)")
+            }
+        }
 
         if echoCancellation {
             do {

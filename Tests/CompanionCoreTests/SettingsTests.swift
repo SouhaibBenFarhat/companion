@@ -59,6 +59,21 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(Settings().repositoryURL(), FileManager.default.homeDirectoryForCurrentUser)
     }
 
+    /// The reason the app exists, so it is on unless deliberately turned off.
+    func testThePanelIsHiddenFromScreenShareByDefault() {
+        XCTAssertTrue(Settings().hideFromScreenShare)
+    }
+
+    func testNoMicrophoneIsChosenByDefault() {
+        XCTAssertEqual(Settings().microphoneDeviceUID, "")
+    }
+
+    /// An older settings file must not silently turn the hiding off.
+    func testAnOlderFileKeepsThePanelHidden() throws {
+        let settings = try JSONDecoder().decode(Settings.self, from: Data(#"{"agent":"claude"}"#.utf8))
+        XCTAssertTrue(settings.hideFromScreenShare)
+    }
+
     func testPanelDefaultsAreLargeEnoughToRead() {
         // The panel only covers the user's own view — viewers of a shared
         // screen lose nothing — so there is no reason for a cramped strip.

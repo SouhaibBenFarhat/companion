@@ -52,6 +52,12 @@ final class AwarenessCoordinator {
         }
     }
 
+    /// Which microphone to open, passed through to capture.
+    var preferredInputUID: String {
+        get { capture.preferredInputUID }
+        set { capture.preferredInputUID = newValue }
+    }
+
     func updateRepository(_ url: URL) {
         repository = url
         screen?.updateRepository(url)
