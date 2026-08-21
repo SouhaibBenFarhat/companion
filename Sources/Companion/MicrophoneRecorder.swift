@@ -64,6 +64,30 @@ final class MicrophoneRecorder {
     ///   default, which on a Mac with several is a coin toss — Continuity can
     ///   hand it the iPhone microphone without warning.
     func start(echoCancellation: Bool, device: AudioInputDevice? = nil) throws {
+        do {
+            try open(echoCancellation: echoCancellation, device: device)
+        } catch {
+            // A microphone that will not open must not cost you the whole
+            // session. Some devices refuse the engine outright — a webcam
+            // microphone already held by a call app, a format the voice
+            // processor will not take — and there is no way to know which in
+            // advance. The system default is a worse microphone than the one
+            // you chose and an enormously better one than none.
+            guard let device else { throw error }
+            SessionLog.shared.write(
+                "mic",
+                "\(device.name) would not open (\(error.localizedDescription)), using the system default"
+            )
+            onDeviceUnavailable?(device.name)
+            try open(echoCancellation: echoCancellation, device: nil)
+        }
+    }
+
+    /// Reported when the chosen microphone had to be abandoned, so the panel
+    /// can say which one rather than leaving the user to wonder.
+    var onDeviceUnavailable: ((String) -> Void)?
+
+    private func open(echoCancellation: Bool, device: AudioInputDevice?) throws {
         stop()
         ring.reset()
 
@@ -72,14 +96,6 @@ final class MicrophoneRecorder {
         }
 
         let input = engine.inputNode
-
-        // Before anything else touches the engine: changing the device after
-        // the format is read would leave a converter built for the wrong one.
-        if let device {
-            if AudioDevices.use(device, on: engine) {
-                SessionLog.shared.write("mic", "using \(device.name)")
-            }
-        }
 
         if echoCancellation {
             do {
@@ -99,6 +115,25 @@ final class MicrophoneRecorder {
                 // Plain capture is still useful; the echo gate covers the rest.
                 voiceProcessingActive = false
                 SessionLog.shared.write("mic", "voice processing unavailable: \(error.localizedDescription)")
+            }
+        }
+
+        // The device goes on last, after voice processing and before the
+        // format is read.
+        //
+        // Not first, which is where it was: turning voice processing on swaps
+        // the input node's audio unit for the voice-processing one, so a device
+        // set before that was set on a unit that then got thrown away. The
+        // engine came up on the system default with no error, or refused to
+        // start at all with -10875.
+        //
+        // Still before the format is read, because the converter is built from
+        // that format and the device decides it.
+        if let device {
+            if AudioDevices.use(device, on: engine) {
+                SessionLog.shared.write("mic", "using \(device.name)")
+            } else {
+                SessionLog.shared.write("mic", "\(device.name) refused; using the system default")
             }
         }
 
