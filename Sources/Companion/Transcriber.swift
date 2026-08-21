@@ -26,6 +26,16 @@ final class Transcriber {
     private var resultsTask: Task<Void, Never>?
     private var reservedLocale: Locale?
 
+    /// The format the analyzer asked for.
+    ///
+    /// Asked, never assumed. Feeding it a format of our own choosing traps
+    /// inside the framework — `SpeechRecognizerWorker.preRunRecognition` dies
+    /// with `EXC_BREAKPOINT`, taking the app with it, and the crash report
+    /// points at Apple's code rather than ours.
+    private var requiredFormat: AVAudioFormat?
+    private var converter: AVAudioConverter?
+    private var converterSource: AVAudioFormat?
+
     init(speaker: CaptureSpeaker) {
         self.speaker = speaker
     }
@@ -58,6 +68,22 @@ final class Transcriber {
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         self.analyzer = analyzer
+
+        // Ask what it wants, then promise to send exactly that.
+        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+            await report("This Mac offers no audio format the transcriber accepts.")
+            await stop()
+            return
+        }
+        requiredFormat = format
+
+        do {
+            try await analyzer.prepareToAnalyze(in: format)
+        } catch {
+            await report("Could not prepare transcription: \(error.localizedDescription)")
+            await stop()
+            return
+        }
 
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
         inputStream = stream
@@ -100,6 +126,9 @@ final class Transcriber {
         }
         analyzer = nil
         transcriber = nil
+        requiredFormat = nil
+        converter = nil
+        converterSource = nil
 
         resultsTask?.cancel()
         resultsTask = nil
@@ -110,11 +139,47 @@ final class Transcriber {
         }
     }
 
-    /// Feeds audio in. `startTime` is what puts the two streams on one clock —
-    /// each analyzer's own timeline starts at zero, so without it the transcript
-    /// can show an answer before the question.
+    /// Feeds audio in, converted to whatever the analyzer asked for.
+    ///
+    /// `startTime` is what puts the two streams on one clock — each analyzer's
+    /// own timeline starts at zero, so without it the transcript can show an
+    /// answer before the question.
     func append(_ buffer: AVAudioPCMBuffer, startTime: CMTime) {
-        inputContinuation?.yield(AnalyzerInput(buffer: buffer, bufferStartTime: startTime))
+        guard let continuation = inputContinuation, let required = requiredFormat else { return }
+
+        guard let converted = convert(buffer, to: required) else { return }
+        continuation.yield(AnalyzerInput(buffer: converted, bufferStartTime: startTime))
+    }
+
+    /// Converts into the analyzer's format, reusing the converter across
+    /// buffers. Building one per buffer would allocate on every chunk of audio.
+    private func convert(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        if buffer.format == format { return buffer }
+
+        if converter == nil || converterSource != buffer.format {
+            converter = AVAudioConverter(from: buffer.format, to: format)
+            converterSource = buffer.format
+        }
+        guard let converter else { return nil }
+
+        let ratio = format.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1_024
+        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
+
+        var supplied = false
+        var error: NSError?
+        converter.convert(to: output, error: &error) { _, status in
+            if supplied {
+                status.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
+            status.pointee = .haveData
+            return buffer
+        }
+
+        guard error == nil, output.frameLength > 0 else { return nil }
+        return output
     }
 
     // MARK: - Model assets
