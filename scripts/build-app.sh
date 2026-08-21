@@ -105,8 +105,22 @@ codesign -d -r- "$APP" 2>&1 | grep 'designated' | sed 's/^/    /'
 
 # Only the production build is ever released, so only it is zipped.
 if [ "$VARIANT" = "dev" ]; then
+  # Install it, rather than leaving it in dist/ for someone to copy by hand.
+  #
+  # Two copies of the same app is the worst state this can be in. macOS finds
+  # an app by its bundle identifier, so `open dist/Companion Dev.app` can
+  # launch the one in /Applications instead — same name, different file, older
+  # build. Every fix goes into the copy nobody is running, and every permission
+  # is granted to the copy nobody is rebuilding. That is not a state you can
+  # debug from inside the app, because both are called Companion Dev.
+  echo "==> Installing to /Applications/${APP_NAME}.app"
+  rm -rf "/Applications/${APP_NAME}.app"
+  cp -R "$APP" "/Applications/${APP_NAME}.app"
+  # And leave nothing behind to launch by mistake.
+  rm -rf "$APP"
+
   echo "==> Done (development build, not zipped)"
-  echo "    $APP"
+  echo "    /Applications/${APP_NAME}.app"
   echo "    data: ~/Library/Application Support/${APP_NAME}"
   exit 0
 fi
