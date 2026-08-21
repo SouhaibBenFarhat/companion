@@ -140,6 +140,7 @@ export type Outgoing =
   | { type: 'toggleListening' }
   | { type: 'lookAtScreen' }
   | { type: 'drag'; dx: number; dy: number }
+  | { type: 'dragEnd' }
   | {
       type: 'updateSettings'
       agent?: string

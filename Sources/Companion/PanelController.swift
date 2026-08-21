@@ -57,10 +57,16 @@ final class PanelController: NSObject {
         webView = WKWebView(frame: .zero, configuration: configuration)
 
         let size = CGSize(width: settings.panelWidth, height: settings.panelHeight)
-        let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let saved = settings.panelOriginX.flatMap { x in
             settings.panelOriginY.map { CGRect(x: x, y: $0, width: size.width, height: size.height) }
         }
+        // The display the panel was last on, not the one holding the key
+        // window. `NSScreen.main` is the latter, and this app is never
+        // frontmost, so on two displays it was routinely the wrong answer —
+        // which is how a laptop-sized panel came back sized for a monitor.
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        let fallback = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let visible = saved.flatMap { PanelPlacement.target(for: $0, among: screens) } ?? fallback
         let frame = saved.map { PanelPlacement.clamp(frame: $0, into: visible) }
             ?? PanelPlacement.defaultFrame(size: size, in: visible)
 
@@ -96,6 +102,17 @@ final class PanelController: NSObject {
         panel.contentView = backdrop
         backdrop.addSubview(webView)
         panel.delegate = self
+
+        // Unplugging a monitor, changing resolution, or switching a display's
+        // arrangement all arrive here. Without it the panel keeps a geometry
+        // that no longer exists anywhere.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitToScreen() }
+        }
         panel.isHiddenFromScreenShare = settings.hideFromScreenShare
 
         awareness.updateRepository(settings.repositoryURL())
@@ -159,6 +176,33 @@ final class PanelController: NSObject {
         return image
     }
 
+    // MARK: - Staying on screen
+
+    /// The screen the panel is actually on.
+    ///
+    /// Not `NSScreen.main`: that is the screen holding the key window, and this
+    /// app is deliberately never frontmost, so on a two-display setup it is
+    /// routinely the wrong one.
+    private var visibleFrame: CGRect? {
+        (panel.screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+    }
+
+    /// Pulls the panel back inside its display, shrinking it if it no longer
+    /// fits.
+    ///
+    /// A panel wider or taller than the screen is not merely untidy: its edges
+    /// and its drag strip are off the display, so it cannot be resized and it
+    /// cannot be moved. The only way out was to delete the settings file.
+    /// Carrying a size from a large monitor to a laptop screen did exactly
+    /// that.
+    func fitToScreen(display: Bool = true) {
+        guard let visible = visibleFrame else { return }
+        let fitted = PanelPlacement.clamp(frame: panel.frame, into: visible)
+        guard fitted != panel.frame else { return }
+        panel.setFrame(fitted, display: display)
+        rememberFrame()
+    }
+
     // MARK: - Showing and hiding
 
     var isVisible: Bool { panel.isVisible }
@@ -166,8 +210,7 @@ final class PanelController: NSObject {
     func toggle() { isVisible ? hide() : show() }
 
     func show() {
-        let visible = NSScreen.main?.visibleFrame ?? panel.frame
-        panel.setFrame(PanelPlacement.clamp(frame: panel.frame, into: visible), display: false)
+        fitToScreen(display: false)
         // Key, but never activating: the app you are presenting stays frontmost
         // while your typing comes here.
         panel.makeKeyAndOrderFront(nil)
@@ -616,6 +659,12 @@ extension PanelController: WKScriptMessageHandler {
             let moved = panel.frame.offsetBy(dx: dx, dy: -dy)
             panel.setFrameOrigin(moved.origin)
             rememberFrame()
+
+        case "dragEnd":
+            // Only once the pointer is up. Clamping on every step would pin the
+            // panel to the display it started on, and you could never drag it
+            // to another one.
+            fitToScreen()
 
         case "newConversation":
             runner.cancel()

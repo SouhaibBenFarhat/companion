@@ -52,6 +52,11 @@ export function startDrag(event: React.MouseEvent): void {
     document.body.style.cursor = previousCursor
 
     if (travelled < SLOP) return
+
+    // Swift pulls the panel back onto whichever display it landed on. Only
+    // now, not on every step — clamping mid-drag would pin it to the display
+    // it started on and you could never move it to another one.
+    send({ type: 'dragEnd' })
     // Dropping the window over a button must not press it. One capture-phase
     // listener, removed by its own `once`, so nothing outlives the drag.
     window.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation() }, {
