@@ -32,7 +32,7 @@ export function HistoryMenu({
               key={conversation.id}
               className={cx(
                 'group flex items-center gap-1 rounded-lg pr-1 transition-colors',
-                current ? 'bg-control-active' : 'hover:bg-control-hover',
+                current ? 'bg-overlay-active' : 'hover:bg-overlay-hover',
               )}
             >
               <button

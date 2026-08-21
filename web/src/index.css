@@ -26,6 +26,11 @@
   --c-chrome: oklch(97.2% 0.004 285 / 0.84);
   --c-card: oklch(100% 0 0 / 0.96);
   --c-overlay: oklch(100% 0 0 / 0.985);
+  /* Rows inside a menu need a hover defined against the MENU, not against the
+     panel. `control-hover` is tuned for chrome and cards, which sit darker —
+     on an overlay it lands at the same lightness and disappears. */
+  --c-overlay-hover: oklch(93% 0.008 285);
+  --c-overlay-active: oklch(89% 0.011 285);
 
   --c-line: oklch(88% 0.008 285);
   --c-line-strong: oklch(79% 0.012 285);
@@ -60,6 +65,8 @@
     --c-chrome: oklch(19.5% 0.012 285 / 0.74);
     --c-card: oklch(27.5% 0.017 285 / 0.94);
     --c-overlay: oklch(31% 0.019 285 / 0.985);
+    --c-overlay-hover: oklch(38% 0.022 285);
+    --c-overlay-active: oklch(43% 0.024 285);
 
     --c-line: oklch(32% 0.016 285);
     --c-line-strong: oklch(43% 0.021 285);
@@ -92,6 +99,8 @@
   --color-chrome: var(--c-chrome);
   --color-card: var(--c-card);
   --color-overlay: var(--c-overlay);
+  --color-overlay-hover: var(--c-overlay-hover);
+  --color-overlay-active: var(--c-overlay-active);
 
   --color-line: var(--c-line);
   --color-line-strong: var(--c-line-strong);
@@ -141,6 +150,13 @@ body {
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* The body is `cursor: default` for a native feel, which left every button
+   looking inert. Deliberately a bare element selector so any cursor utility —
+   `cursor-grab` on the drag surfaces — still wins on specificity. */
+button:not(:disabled) {
+  cursor: pointer;
 }
 
 /* Only the conversation is selectable — you copy answers, not chrome. */

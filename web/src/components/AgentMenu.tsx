@@ -80,7 +80,7 @@ export function AgentMenu({
         onClick={() => onOpenChange(!open)}
         className={cx(
           'inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] transition-colors',
-          'text-muted hover:bg-control-hover hover:text-ink',
+          'text-muted hover:bg-overlay-hover hover:text-ink',
           open && 'bg-control-hover text-ink',
           focusRing,
         )}
@@ -111,7 +111,7 @@ export function AgentMenu({
                 onClick={() => choose(option.id)}
                 className={cx(
                   'flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors',
-                  'hover:bg-control-hover',
+                  'hover:bg-overlay-hover',
                   focusRing,
                 )}
               >
@@ -144,7 +144,7 @@ export function AgentMenu({
             }}
             className={cx(
               'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors',
-              'hover:bg-control-hover',
+              'hover:bg-overlay-hover',
               focusRing,
             )}
           >
