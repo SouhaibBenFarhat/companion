@@ -3,8 +3,15 @@ import { send } from '../lib/bridge'
 import { AutoTextarea, Bar, Divider, DragRegion, Hint, IconButton, Well } from '../ui'
 import { SendIcon, StopIcon, iconStroke } from '../ui/icons'
 
-/** Roughly three lines at rest, eight before it scrolls. */
-const MIN_HEIGHT = 58
+/**
+ * One line at rest, eight before it scrolls.
+ *
+ * The field hugs its text. A three-line minimum meant an empty box with the
+ * text along the top, so Send had nothing to line up with — centred, it sat in
+ * the blank space underneath, and bottom-aligned it sat on a floor two lines
+ * below what you had written.
+ */
+const MIN_HEIGHT = 22
 const MAX_HEIGHT = 200
 
 export function Composer({
