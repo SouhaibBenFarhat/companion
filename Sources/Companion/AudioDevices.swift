@@ -26,11 +26,27 @@ enum AudioDevices {
     /// Must happen before the engine starts. `AVAudioEngine` has no API for
     /// this — the device is set on the audio unit underneath its input node,
     /// which is why this reaches through to Core Audio.
+    ///
+    /// Returns false when the device would not take, and the caller is expected
+    /// to carry on with the system default rather than fail: a microphone that
+    /// cannot be selected is a worse outcome than the wrong microphone, and
+    /// retrying it forever is worse than both.
     @discardableResult
     static func use(_ device: AudioInputDevice, on engine: AVAudioEngine) -> Bool {
         guard let id = deviceID(forUID: device.uid), let unit = engine.inputNode.audioUnit else {
             return false
         }
+
+        // The unit has to be uninitialised to accept a new device.
+        //
+        // Reading `engine.inputNode` is what builds and initialises it, and
+        // that read has already happened by the time anyone can ask for its
+        // audio unit — so setting the device always failed with -10851,
+        // kAudioUnitErr_InvalidPropertyValue, and the engine quietly stayed on
+        // the system default. Worse, the attempt posts an engine configuration
+        // change, which the capture graph treats as "the devices moved" and
+        // rebuilds for: start, fail, rebuild, start, fail, forever.
+        AudioUnitUninitialize(unit)
 
         var deviceID = id
         let status = AudioUnitSetProperty(
@@ -42,10 +58,41 @@ enum AudioDevices {
             UInt32(MemoryLayout<AudioDeviceID>.size)
         )
 
+        let initialised = AudioUnitInitialize(unit)
+
         if status != noErr {
             SessionLog.shared.write("mic", "could not select \(device.name) (\(status))")
         }
-        return status == noErr
+        if initialised != noErr {
+            SessionLog.shared.write("mic", "could not reinitialise the input unit (\(initialised))")
+        }
+        return status == noErr && initialised == noErr
+    }
+
+    /// What the system is currently using, as one comparable string.
+    ///
+    /// Core Audio sends a notification for changes that do not move any device
+    /// — including ones this app causes itself. Comparing the answer is the
+    /// only way to tell a real change from an echo of our own setup.
+    static func fingerprint() -> String {
+        [
+            kAudioHardwarePropertyDefaultInputDevice,
+            kAudioHardwarePropertyDefaultOutputDevice,
+        ]
+        .map { selector -> String in
+            var address = AudioObjectPropertyAddress(
+                mSelector: selector,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var id = AudioDeviceID(0)
+            var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+            let status = AudioObjectGetPropertyData(
+                AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id
+            )
+            return status == noErr ? String(id) : "?"
+        }
+        .joined(separator: "/")
     }
 
     // MARK: - Lookups

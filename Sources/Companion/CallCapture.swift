@@ -89,6 +89,12 @@ final class CallCapture {
         observeDeviceChanges()
         startPump()
         isRunning = true
+        // What the devices looked like when this graph came up. Anything that
+        // arrives before it settles, or that leaves this unchanged, is noise.
+        restartState.started(
+            at: Date().timeIntervalSinceReferenceDate,
+            fingerprint: AudioDevices.fingerprint()
+        )
         SessionLog.shared.write("capture", "started mic=\(settings.captureMicrophone) tap=\(tap != nil)")
     }
 
@@ -163,9 +169,10 @@ final class CallCapture {
             }
         }
 
-        // Audio arriving is the only proof a rebuild worked.
+        // Audio arriving is the only proof a rebuild worked — and it has to
+        // keep arriving. A trickle between two failures is not a recovery.
         if levels.me > 0 || levels.them > 0 {
-            restartPolicy.succeeded(state: &restartState)
+            restartPolicy.succeeded(at: Date().timeIntervalSinceReferenceDate, state: &restartState)
         }
         DispatchQueue.main.async { [weak self] in self?.onLevels?(levels) }
     }
@@ -236,7 +243,15 @@ final class CallCapture {
         guard isRunning else { return }
         let now = Date().timeIntervalSinceReferenceDate
 
-        switch restartPolicy.requestRebuild(at: now, state: &restartState) {
+        switch restartPolicy.requestRebuild(
+            at: now,
+            fingerprint: AudioDevices.fingerprint(),
+            state: &restartState
+        ) {
+        case .ignore(let why):
+            // Not worth a line each time; this fires in bursts.
+            _ = why
+
         case .wait(let remaining):
             DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
                 self?.deviceChanged()
