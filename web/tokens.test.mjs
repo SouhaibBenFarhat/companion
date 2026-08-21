@@ -80,7 +80,7 @@ function ramps(appearance) {
   )) {
     found[name] = { l: Number(l) / 100, c: Number(c), h: Number(h) }
   }
-  for (const [, name, value] of scoped.matchAll(/--(state-step|divider-step|alpha-[a-z]+):\s*(-?[\d.]+)/g)) {
+  for (const [, name, value] of scoped.matchAll(/--(state-step|alpha-[a-z]+):\s*(-?[\d.]+)/g)) {
     found[name] = Number(value)
   }
   return found
@@ -149,6 +149,33 @@ function stepped(surface, step) {
   return { ...surface, l: Math.min(1, Math.max(0, surface.l + step)) }
 }
 
+const clamp = (v) => Math.min(1, Math.max(0, v))
+
+/** Linear sRGB back to OKLCH, so a blended colour can be measured like any other. */
+function rgbToOklch([r, g, b]) {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+
+  const L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+  const A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+
+  return { l: L, c: Math.hypot(A, B), h: (Math.atan2(B, A) * 180) / Math.PI }
+}
+
+/** Alpha-composite one colour over another, the way the screen does — in
+ *  linear light, not by averaging the numbers in the file. */
+function over(top, bottom, alpha) {
+  const linear = (colour) => {
+    const { r, g, b } = oklchToRgb(colour)
+    return [toLinear(clamp(r)), toLinear(clamp(g)), toLinear(clamp(b))]
+  }
+  const t = linear(top)
+  const u = linear(bottom)
+  return rgbToOklch(t.map((v, i) => v * alpha + u[i] * (1 - alpha)))
+}
+
 // ---------------------------------------------------------------------------
 // The checks
 // ---------------------------------------------------------------------------
@@ -178,11 +205,22 @@ for (const appearance of ['light', 'dark']) {
     }
   }
 
-  // Dividers have to be visible on the surfaces they divide.
+  // A border has to be visible on the surfaces it outlines.
   for (const surface of ['chrome', 'card', 'overlay']) {
     const d = distance(colour(surface), colour('line'))
     if (d < SURFACE_FLOOR) {
       failures.push(`${appearance} ${surface}/line  dE ${d.toFixed(4)}  (floor ${SURFACE_FLOOR})`)
+    }
+  }
+
+  // A divider is ink at alpha, so it has to be measured composited — and on
+  // EVERY surface, including the input well. Checking only chrome, card and
+  // overlay is how the composer shipped with a divider nobody could see.
+  for (const surface of ['well', 'chrome', 'card', 'overlay', 'input']) {
+    const line = over(colour('muted'), colour(surface), r['alpha-divider'])
+    const d = distance(colour(surface), line)
+    if (d < SURFACE_FLOOR) {
+      failures.push(`${appearance} ${surface}/divider  dE ${d.toFixed(4)}  (floor ${SURFACE_FLOOR})`)
     }
   }
 

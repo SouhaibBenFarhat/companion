@@ -64,6 +64,15 @@
   --k-number: oklch(50% 0.115 60);
   --k-title: oklch(45% 0.11 245);
 
+  /* A divider is ink at low alpha, not a lightness step away from its surface.
+     Every surface here is see-through, so what is actually painted is the
+     token composited over the blurred desktop — a solid line derived from the
+     token lands on a colour that is not on screen, which is how the composer
+     ended up with a hairline nobody could see. Alpha composites over whatever
+     is really there. --t-2 flips between appearances on its own, so the line
+     is dark on light and light on dark with no second value. */
+  --alpha-divider: 0.30;
+
   /* Surfaces stay see-through so the material behind the panel shows. */
   --alpha-well: 0.74;
   --alpha-chrome: 0.84;
@@ -75,7 +84,6 @@
      against white and produce no hover at all. */
   --state-step: -0.045;
   --state-step-strong: -0.075;
-  --divider-step: -0.06;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -117,7 +125,6 @@
 
     --state-step: 0.055;
     --state-step-strong: 0.09;
-    --divider-step: 0.07;
   }
 }
 
@@ -138,6 +145,7 @@
 
   --c-line: var(--b-1);
   --c-line-strong: var(--b-2);
+  --c-divider: oklch(from var(--t-2) l c h / var(--alpha-divider));
 
   --c-accent: var(--a-fill);
   --c-accent-hover: var(--a-fill-hover);

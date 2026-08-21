@@ -91,12 +91,13 @@ textarea:disabled {
 [data-surface='input'] { --surface: var(--s-0); background-color: var(--c-input); }
 [data-surface='code'] { --surface: var(--s-2); background-color: var(--c-code); }
 
-/* A hairline, derived rather than fixed. --c-line is tuned for the panel's
-   chrome; on the darkest surface in the set it either vanishes or reads as a
-   border. A step from the surface it lies on works on any of them. */
+/* A hairline. Ink at low alpha rather than a step away from the surface: every
+   surface in this app is translucent, so the colour actually on screen is the
+   token composited over the blurred desktop, and a solid line derived from the
+   token lands on a colour that is not there. */
 [data-divider] {
   height: 1px;
-  background-color: oklch(from var(--surface) calc(l + var(--divider-step)) c h);
+  background-color: var(--c-divider);
 }
 
 /* The composer's toolbar sits inside the input well but is raised above it.
