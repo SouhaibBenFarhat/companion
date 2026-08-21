@@ -59,17 +59,14 @@ function Row({ item }: { item: PermissionItem }) {
         </div>
         <Hint>{item.reason}</Hint>
 
-        {/* Before it is granted, not after. macOS reads these once, at launch,
-            so switching one on while Companion is running changes nothing and
-            "Check again" can never notice. Saying so only after it worked is
-            the wrong way round. */}
-        {item.needsRestart && (
+        {/* Only while it is still off. macOS reads these once, at launch, so a
+            switch flipped while Companion is running changes nothing until it
+            restarts — which is the explanation for a row that says off when the
+            switch says on. Once the row says on, there is nothing left to
+            reopen for and saying it anyway is just noise. */}
+        {!granted && item.needsRestart && (
           <div className="mt-1">
-            <Hint>
-              {granted
-                ? 'Just switched this on? Reopen Companion — macOS only reads it at launch.'
-                : 'Switched it on and this still says off? Reopen Companion — macOS only reads it at launch.'}
-            </Hint>
+            <Hint>Switched it on and this still says off? macOS only reads it at launch.</Hint>
             <div className="mt-1.5">
               <Button size="xs" onClick={() => send({ type: 'relaunch' })}>
                 Quit and reopen
