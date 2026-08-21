@@ -129,9 +129,45 @@ enum PermissionChecker {
     }
 
     static func openSettings(for permission: Permission) {
+        // Ask first. Asking is what puts the app in the list.
+        //
+        // Neither Accessibility nor Screen Recording adds a row until the app
+        // has actually requested it, and the panel's own check deliberately
+        // never requests — it reads the state without prompting, so opening the
+        // panel does not fire three system dialogs at once. Accessibility also
+        // has no "not asked" state to read: the API answers trusted or not, so
+        // a fresh install and a refusal look identical, and the button always
+        // took the open-settings path.
+        //
+        // The result was a button marked "Open Settings" that opened a list
+        // Companion was not in, and no way to add it. Screen Recording already
+        // had a fix for this; Accessibility did not.
+        register(permission)
+
         // Companion never activates on its own, so System Settings would open
         // behind whatever is in front without this.
         NSWorkspace.shared.open(permission.settingsURL)
         NSApp.activate(ignoringOtherApps: false)
+    }
+
+    /// Makes macOS list the app, so there is a row to switch on.
+    ///
+    /// Each call is expected to fail — that is not the point of making it. The
+    /// asking is what creates the entry.
+    private static func register(_ permission: Permission) {
+        switch permission {
+        case .accessibility:
+            // The prompting form of the check from `accessibility()` above.
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+
+        case .systemAudio:
+            _ = CGRequestScreenCaptureAccess()
+
+        case .microphone:
+            // Has a real in-app prompt, and appears in the list once asked.
+            break
+        }
+        log("registered \(permission.rawValue)")
     }
 }
