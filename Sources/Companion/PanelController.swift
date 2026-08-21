@@ -737,6 +737,19 @@ extension PanelController: WKScriptMessageHandler {
         case "lookAtScreen":
             captureScreen()
 
+        case "relaunch":
+            // Accessibility and Screen Recording are read once, at launch. A
+            // grant made while the app is running reaches nothing, and no
+            // amount of checking again will pick it up — so the panel offers
+            // the only thing that works instead of describing it.
+            let url = Bundle.main.bundleURL
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            SessionLog.shared.write("panel", "relaunching for permissions")
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
+                DispatchQueue.main.async { NSApp.terminate(nil) }
+            }
+
         case "refreshPermissions":
             // Cheap, and the only way to notice a grant made in System Settings
             // while the panel was open.

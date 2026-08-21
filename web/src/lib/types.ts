@@ -143,6 +143,7 @@ export type Outgoing =
   | { type: 'requestPermission'; id: PermissionId }
   | { type: 'openPermissionSettings'; id: PermissionId }
   | { type: 'refreshPermissions' }
+  | { type: 'relaunch' }
   | { type: 'toggleListening' }
   | { type: 'lookAtScreen' }
   | { type: 'drag'; dx: number; dy: number }

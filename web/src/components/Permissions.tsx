@@ -59,8 +59,23 @@ function Row({ item }: { item: PermissionItem }) {
         </div>
         <Hint>{item.reason}</Hint>
 
-        {granted && item.needsRestart && (
-          <Hint>Just granted this? Quit and reopen Companion — macOS only reads it once per launch.</Hint>
+        {/* Before it is granted, not after. macOS reads these once, at launch,
+            so switching one on while Companion is running changes nothing and
+            "Check again" can never notice. Saying so only after it worked is
+            the wrong way round. */}
+        {item.needsRestart && (
+          <div className="mt-1">
+            <Hint>
+              {granted
+                ? 'Just switched this on? Reopen Companion — macOS only reads it at launch.'
+                : 'Switched it on and this still says off? Reopen Companion — macOS only reads it at launch.'}
+            </Hint>
+            <div className="mt-1.5">
+              <Button size="xs" onClick={() => send({ type: 'relaunch' })}>
+                Quit and reopen
+              </Button>
+            </div>
+          </div>
         )}
 
         {!granted && item.resetCommand && <Stuck command={item.resetCommand} />}
