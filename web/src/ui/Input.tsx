@@ -66,16 +66,17 @@ export function Select({
  * The container the composer's text area and its toolbar share.
  *
  * A recessed well, not another raised card: the field reads as a hole in the
- * chrome rather than a box sitting on top of it. `data-field` is what gives it
- * the focus ring from base.css when anything inside takes focus, so the border
- * colour is not written here or anywhere else in a view.
+ * chrome rather than a box sitting on top of it. `data-well` is what turns its
+ * border accent when anything inside takes focus, so no view writes a focus
+ * colour — and the field inside stays unmarked, or the composer gets two
+ * rings.
  */
 export function Well({ children }: { children: React.ReactNode }) {
   return (
     <div
-      data-field
+      data-well
       data-surface="input"
-      className="rounded-lg border border-line-strong px-2.5 pb-1.5 pt-2.5"
+      className="rounded-lg border border-line-strong px-2.5 pb-1.5 pt-2.5 transition-colors"
     >
       {children}
     </div>
@@ -90,6 +91,9 @@ export function Well({ children }: { children: React.ReactNode }) {
  * It lives here once, with the field it belongs to.
  *
  * `submit` fires on Enter; Shift+Enter still makes a new line.
+ *
+ * No `data-field`: this always sits inside a `Well`, and the well's border
+ * already shows the focus. Marking both drew two rings around the composer.
  */
 export function AutoTextarea({
   min,
@@ -120,7 +124,6 @@ export function AutoTextarea({
   return (
     <textarea
       ref={element}
-      data-field
       spellCheck={false}
       {...props}
       onInput={fit}

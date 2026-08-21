@@ -62,7 +62,9 @@ export function ComposerControls({
         trigger={
           <Button
             variant={readOnly ? 'ghost' : 'outlined'}
-            tone={readOnly ? 'neutral' : 'danger'}
+            // Armed, not broken. A tinted chip says "this is on"; red says
+            // something went wrong, and nothing has.
+            tone={readOnly ? 'neutral' : 'accent'}
             size="sm"
             tight
             aria-pressed={!readOnly}
@@ -92,7 +94,7 @@ export function ComposerControls({
           <Button variant="ghost" size="sm" onClick={() => setConfirmEdits(false)}>
             Cancel
           </Button>
-          <Button variant="filled" tone="danger" size="sm" onClick={() => setPermission('acceptEdits')}>
+          <Button variant="filled" tone="accent" size="sm" onClick={() => setPermission('acceptEdits')}>
             Allow edits
           </Button>
         </div>

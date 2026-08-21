@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Base rules — the only place :hover, :active, :focus-visible and :disabled are
+   Base rules — the only place :hover, :active, :focus and :disabled are
    styled. A component never writes them, so they cannot drift apart.
 --------------------------------------------------------------------------- */
 
@@ -48,12 +48,24 @@ body {
   background-color: oklch(from var(--surface) calc(l + var(--state-step-strong)) c h);
 }
 
-/* Keyboard only. A mouse press should not leave a ring behind. */
-[data-pressable]:focus-visible,
-[data-field]:focus-visible,
-[data-field]:focus-within {
+/* Keyboard only for a button. A mouse press should not leave a ring behind. */
+[data-pressable]:focus-visible {
   outline: var(--focus-w) solid var(--c-accent);
   outline-offset: var(--focus-off);
+}
+
+/* A text field rings whenever it holds focus, mouse or keyboard — you have to
+   be able to see where typing goes. */
+[data-field]:focus {
+  outline: var(--focus-w) solid var(--c-accent);
+  outline-offset: var(--focus-off);
+}
+
+/* A well is a field and its toolbar in one box. Its own border carries the
+   focus: an outline around something 90 points tall reads as an error, and
+   ringing the well AND the field inside it drew two. */
+[data-well]:focus-within {
+  border-color: var(--c-accent);
 }
 
 /* Disabled is a colour, not an opacity. Fading the whole element also fades
