@@ -304,6 +304,7 @@ final class PanelController: NSObject {
 
     func startListening() {
         let permissions = PermissionChecker.report()
+        PermissionChecker.log("listen requested")
         guard permissions.canListen else {
             send(["type": "captureError", "message": permissions.summary])
             showSettingsTab()

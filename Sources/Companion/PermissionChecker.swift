@@ -19,6 +19,24 @@ enum PermissionChecker {
         )
     }
 
+    /// Writes what macOS currently says, and which app it is saying it about.
+    ///
+    /// "I granted it and it still asks" has three separate causes and they are
+    /// indistinguishable from the panel: the grant went to the other Companion
+    /// (the release build and the development build are different apps to
+    /// macOS, with different bundle identifiers and separate entries in every
+    /// list); or the app was rebuilt, which changes its code signature and
+    /// makes macOS forget every grant it held; or it was granted while running,
+    /// and Accessibility and Screen Recording are only read at launch.
+    static func log(_ moment: String) {
+        let states = Permission.allCases
+            .map { "\($0.rawValue)=\(state(of: $0).rawValue)" }
+            .joined(separator: " ")
+        let bundle = Bundle.main.bundleIdentifier ?? "?"
+        let name = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "?"
+        SessionLog.shared.write("permissions", "\(moment) app=\(name) id=\(bundle) \(states)")
+    }
+
     static func state(of permission: Permission) -> PermissionState {
         switch permission {
         case .microphone: return microphone()
