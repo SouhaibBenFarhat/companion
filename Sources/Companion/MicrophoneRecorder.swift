@@ -64,28 +64,53 @@ final class MicrophoneRecorder {
     ///   default, which on a Mac with several is a coin toss — Continuity can
     ///   hand it the iPhone microphone without warning.
     func start(echoCancellation: Bool, device: AudioInputDevice? = nil) throws {
-        do {
-            try open(echoCancellation: echoCancellation, device: device)
-        } catch {
-            // A microphone that will not open must not cost you the whole
-            // session. Some devices refuse the engine outright — a webcam
-            // microphone already held by a call app, a format the voice
-            // processor will not take — and there is no way to know which in
-            // advance. The system default is a worse microphone than the one
-            // you chose and an enormously better one than none.
-            guard let device else { throw error }
-            SessionLog.shared.write(
-                "mic",
-                "\(device.name) would not open (\(error.localizedDescription)), using the system default"
-            )
-            onDeviceUnavailable?(device.name)
-            try open(echoCancellation: echoCancellation, device: nil)
+        // Give up the least valuable thing first.
+        //
+        // A USB microphone can refuse the voice processor outright — the Brio
+        // fails initialisation with -10875 while the same device opens fine
+        // without it — and a device another app holds can refuse everything.
+        // Neither is knowable in advance, so this tries in the order of what
+        // is worth keeping: your microphone matters more than echo
+        // cancellation, because a gate in software covers some of what the
+        // processor does and nothing covers recording the wrong microphone.
+        var attempts: [(device: AudioInputDevice?, echo: Bool, note: String)] = []
+        if echoCancellation {
+            attempts.append((device, true, ""))
+            attempts.append((device, false, "without echo cancellation"))
+        } else {
+            attempts.append((device, false, ""))
         }
+        if device != nil {
+            attempts.append((nil, echoCancellation, "on the system default microphone"))
+            if echoCancellation {
+                attempts.append((nil, false, "on the system default microphone, without echo cancellation"))
+            }
+        }
+
+        var lastError: Error?
+        for attempt in attempts {
+            do {
+                try open(echoCancellation: attempt.echo, device: attempt.device)
+                if !attempt.note.isEmpty {
+                    let name = device?.name ?? "The microphone"
+                    SessionLog.shared.write("mic", "started \(attempt.note)")
+                    onDegraded?("\(name) would not open. Listening \(attempt.note).")
+                }
+                return
+            } catch {
+                lastError = error
+                SessionLog.shared.write(
+                    "mic",
+                    "attempt failed (\(attempt.device?.name ?? "system default"), echo=\(attempt.echo)): \(error.localizedDescription)"
+                )
+            }
+        }
+
+        throw lastError ?? MicrophoneError.noInputFormat
     }
 
-    /// Reported when the chosen microphone had to be abandoned, so the panel
-    /// can say which one rather than leaving the user to wonder.
-    var onDeviceUnavailable: ((String) -> Void)?
+    /// Reported when listening started, but not the way it was asked for.
+    var onDegraded: ((String) -> Void)?
 
     private func open(echoCancellation: Bool, device: AudioInputDevice?) throws {
         stop()

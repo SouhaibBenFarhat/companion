@@ -74,9 +74,7 @@ final class CallCapture {
                     preferredUID: preferredInputUID,
                     available: AudioDevices.inputs()
                 )
-                microphone?.onDeviceUnavailable = { [weak self] name in
-                    self?.report("\(name) would not open. Using the system default microphone.")
-                }
+                microphone?.onDegraded = { [weak self] message in self?.report(message) }
                 try microphone?.start(
                     echoCancellation: settings.echoCancellationEnabled,
                     device: chosen
