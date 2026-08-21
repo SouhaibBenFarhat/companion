@@ -116,6 +116,12 @@ final class PanelController: NSObject {
         panel.isHiddenFromScreenShare = settings.hideFromScreenShare
         applyAppearance()
 
+        // At launch, because that is the only moment Accessibility and Screen
+        // Recording are read. If a grant is not visible here it is not visible
+        // at all until the next start, and the log is the only place that fact
+        // is recorded.
+        PermissionChecker.log("launched")
+
         awareness.updateRepository(settings.repositoryURL())
         awareness.preferredInputUID = settings.microphoneDeviceUID
 
@@ -753,6 +759,7 @@ extension PanelController: WKScriptMessageHandler {
         case "refreshPermissions":
             // Cheap, and the only way to notice a grant made in System Settings
             // while the panel was open.
+            PermissionChecker.log("checked again")
             sendState()
 
         case "openLink":
