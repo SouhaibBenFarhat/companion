@@ -1,0 +1,106 @@
+/* ---------------------------------------------------------------------------
+   Base rules — the only place :hover, :active, :focus-visible and :disabled are
+   styled. A component never writes them, so they cannot drift apart.
+--------------------------------------------------------------------------- */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* Transparent: the blurred material lives in AppKit behind the web view.
+     Tinting here as well would stack two layers and defeat it. */
+  background: transparent;
+  color: var(--c-ink);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: var(--text-md);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  /* The window is borderless; the rounded corner lives here. */
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Anything that can be pressed. Marked by the kit, never by a view.
+
+   Hover and active are computed from whatever surface the element sits on,
+   so they cannot collide with it — which is what made a menu row's hover
+   invisible when the hover token and the menu happened to match. */
+[data-pressable] {
+  cursor: pointer;
+  transition:
+    background-color var(--dur-state) ease,
+    color var(--dur-state) ease,
+    border-color var(--dur-state) ease;
+}
+
+[data-pressable]:hover:not(:disabled):not([data-pressed='true']) {
+  background-color: oklch(from var(--surface) calc(l + var(--state-step)) c h);
+}
+
+[data-pressable]:active:not(:disabled) {
+  background-color: oklch(from var(--surface) calc(l + var(--state-step-strong)) c h);
+}
+
+/* Keyboard only. A mouse press should not leave a ring behind. */
+[data-pressable]:focus-visible,
+[data-field]:focus-visible,
+[data-field]:focus-within {
+  outline: var(--focus-w) solid var(--c-accent);
+  outline-offset: var(--focus-off);
+}
+
+/* Disabled is a colour, not an opacity. Fading the whole element also fades
+   its background, which on a translucent panel lets the desktop through. */
+[data-pressable]:disabled,
+[data-field]:disabled {
+  cursor: not-allowed;
+  color: var(--c-faint);
+}
+
+/* Every surface declares what it is, so its children can derive their states
+   from it without being told. */
+[data-surface='well'] { --surface: var(--s-1); background-color: var(--c-well); }
+[data-surface='chrome'] { --surface: var(--s-3); background-color: var(--c-chrome); }
+[data-surface='control'] { --surface: var(--s-4); background-color: var(--c-control); }
+[data-surface='card'] { --surface: var(--s-5); background-color: var(--c-card); }
+[data-surface='overlay'] { --surface: var(--s-6); background-color: var(--c-overlay); }
+[data-surface='input'] { --surface: var(--s-0); background-color: var(--c-input); }
+[data-surface='code'] { --surface: var(--s-2); background-color: var(--c-code); }
+
+/* The panel floor, so a control that is not inside any surface still has one
+   to derive from. */
+:root {
+  --surface: var(--s-1);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(from var(--c-muted) l c h / 0.32);
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(from var(--c-muted) l c h / 0.52);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Only the conversation is selectable — you copy answers, not chrome. */
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: auto;
+}

@@ -1,0 +1,189 @@
+/* ---------------------------------------------------------------------------
+   Tokens — the only file allowed to write a colour, size, radius, duration or
+   stacking level.
+   ---------------------------------------------------------------------------
+
+   Two tiers.
+
+   RAMPS (--s-, --t-, --b-, --a-, --d-) are indexed steps. Nothing outside this
+   file reads one. A ramp step is a position, not a meaning.
+
+   ROLES (--c-) name a job — the well, the chrome, a card, an overlay.
+   Components read only these.
+
+   Hover and active are NOT tokens. They are a signed step away from whatever
+   surface an element sits on, computed with relative colour syntax. That makes
+   the bug that started this arithmetically impossible: a hover cannot equal its
+   own background when it is defined as a distance from it. A surface added
+   tomorrow gets its states for free, instead of borrowing the nearest existing
+   hover and landing on the same value.
+
+   Alpha carries through by leaving the slot out of `oklch(from …)`, so the
+   blurred material behind the panel still shows through a hovered row.
+--------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces, by height above the panel floor. */
+  --s-0: oklch(89.5% 0.008 285);
+  --s-1: oklch(93.5% 0.006 285);
+  --s-2: oklch(90.5% 0.007 285);
+  --s-3: oklch(97.5% 0.004 285);
+  --s-4: oklch(100% 0 285);
+  --s-5: oklch(100% 0 285);
+  --s-6: oklch(100% 0 285);
+
+  /* Ink, by rising contrast against those surfaces. */
+  --t-1: oklch(68% 0.016 285);
+  --t-2: oklch(46% 0.021 285);
+  --t-3: oklch(25% 0.020 285);
+
+  /* Hairline, and the outline of something floating. */
+  --b-1: oklch(88% 0.008 285);
+  --b-2: oklch(79% 0.012 285);
+
+  /* Accent and danger split three ways. A colour readable as text is too dark
+     to fill a button, and one that fills a button is unreadable as text. */
+  --a-fill: oklch(55% 0.19 285);
+  --a-fill-hover: oklch(49% 0.19 285);
+  --a-text: oklch(46% 0.19 285);
+  --a-soft: oklch(93% 0.035 285);
+
+  --d-fill: oklch(52% 0.19 25);
+  --d-text: oklch(50% 0.19 25);
+  --d-soft: oklch(93% 0.035 25);
+
+  --on-fill: oklch(99% 0 285);
+
+  /* Surfaces stay see-through so the material behind the panel shows. */
+  --alpha-well: 0.74;
+  --alpha-chrome: 0.84;
+  --alpha-card: 0.96;
+  --alpha-overlay: 0.985;
+  --alpha-input: 0.96;
+
+  /* Signed: light goes darker, dark goes lighter. An unsigned step would clamp
+     against white and produce no hover at all. */
+  --state-step: -0.045;
+  --state-step-strong: -0.075;
+  --divider-step: -0.06;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --s-0: oklch(9% 0.009 285);
+    --s-1: oklch(12.5% 0.010 285);
+    --s-2: oklch(16.5% 0.011 285);
+    --s-3: oklch(19.5% 0.012 285);
+    --s-4: oklch(23% 0.013 285);
+    --s-5: oklch(26.5% 0.015 285);
+    --s-6: oklch(30% 0.017 285);
+
+    --t-1: oklch(66% 0.014 285);
+    --t-2: oklch(84% 0.012 285);
+    --t-3: oklch(94% 0.004 285);
+
+    --b-1: oklch(34% 0.018 285);
+    --b-2: oklch(50% 0.020 285);
+
+    --a-fill: oklch(58% 0.19 285);
+    --a-fill-hover: oklch(63% 0.18 285);
+    --a-text: oklch(84% 0.08 285);
+    --a-soft: oklch(31% 0.055 285);
+
+    --d-fill: oklch(55% 0.18 25);
+    --d-text: oklch(85% 0.08 25);
+    --d-soft: oklch(32% 0.055 25);
+
+    --alpha-well: 0.62;
+    --alpha-chrome: 0.74;
+    --alpha-card: 0.94;
+    --alpha-overlay: 0.985;
+    --alpha-input: 0.90;
+
+    --state-step: 0.055;
+    --state-step-strong: 0.09;
+    --divider-step: 0.07;
+  }
+}
+
+/* Roles. Written once — the block above swaps the ramps underneath, so none of
+   this is repeated per appearance. */
+:root {
+  --c-well: oklch(from var(--s-1) l c h / var(--alpha-well));
+  --c-input: oklch(from var(--s-0) l c h / var(--alpha-input));
+  --c-code: var(--s-2);
+  --c-chrome: oklch(from var(--s-3) l c h / var(--alpha-chrome));
+  --c-control: var(--s-4);
+  --c-card: oklch(from var(--s-5) l c h / var(--alpha-card));
+  --c-overlay: oklch(from var(--s-6) l c h / var(--alpha-overlay));
+
+  --c-ink: var(--t-3);
+  --c-muted: var(--t-2);
+  --c-faint: var(--t-1);
+
+  --c-line: var(--b-1);
+  --c-line-strong: var(--b-2);
+
+  --c-accent: var(--a-fill);
+  --c-accent-hover: var(--a-fill-hover);
+  --c-accent-text: var(--a-text);
+  --c-accent-soft: var(--a-soft);
+  --c-accent-fg: var(--on-fill);
+
+  --c-danger: var(--d-fill);
+  --c-danger-text: var(--d-text);
+  --c-danger-soft: var(--d-soft);
+
+  /* The edge of a tinted box. Its own token rather than the fill at an opacity,
+     because an opacity written in a class is a raw value in a component. */
+  --c-accent-line: oklch(from var(--a-fill) l c h / 0.4);
+  --c-danger-line: oklch(from var(--d-fill) l c h / 0.38);
+
+  /* The drag handle, which is a hint and must not read as content. */
+  --c-grab: oklch(from var(--t-2) l c h / 0.3);
+  --c-grab-hover: oklch(from var(--t-2) l c h / 0.6);
+
+  /* One height scale for everything, so a row of mixed controls lines up.
+     A child's radius is the parent's radius minus the parent's padding. */
+  --h-xs: 24px;
+  --h-sm: 28px;
+  --h-md: 32px;
+
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --icon-size: 14px;
+  --icon-stroke: 1.75;
+
+  --focus-w: 2px;
+  --focus-off: 2px;
+
+  --z-float: 50;
+
+  --dur-state: 120ms;
+  --dur-move: 150ms;
+
+  /* The switch, as one set of numbers. Changing its size is one edit here
+     rather than five arbitrary values spread through a component. */
+  --switch-w: 30px;
+  --switch-h: 18px;
+  --switch-knob: 14px;
+  --switch-gap: 2px;
+  --switch-travel: 14px;
+
+  /* Widths that are a decision, not a layout accident. */
+  --menu-w: 210px;
+  --bubble-max: 85%;
+  --label-max: 11rem;
+
+  /* Caps need air; lowercase does not. */
+  --tracking-caps: 0.09em;
+}

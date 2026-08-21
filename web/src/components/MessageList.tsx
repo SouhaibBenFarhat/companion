@@ -1,28 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
-import { Button, Notice, Pulse, Surface } from '../ui'
+import { Button, Callout, Notice, Pulse, Surface } from '../ui'
 import { send } from '../lib/bridge'
 import type { Msg, Suggestion } from '../lib/types'
 
 function Answer({ text }: { text: string }) {
   return (
-    <Surface level="card" className="px-3 py-2.5">
-      <Markdown text={text} />
+    <Surface level="card">
+      <div className="px-3 py-2.5">
+        <Markdown text={text} />
+      </div>
     </Surface>
   )
 }
 
 function Bubble({ message }: { message: Msg }) {
-  if (message.role === 'user') {
-    return (
-      <div className="flex justify-end">
-        <div className="selectable max-w-[85%] rounded-xl bg-accent px-3 py-2 font-medium break-words whitespace-pre-wrap text-accent-fg">
-          {message.text}
-        </div>
+  if (message.role !== 'user') return <Answer text={message.text} />
+
+  return (
+    <div className="flex justify-end">
+      <div className="selectable max-w-[var(--bubble-max)] whitespace-pre-wrap break-words rounded-lg bg-accent px-3 py-2 font-medium text-accent-fg">
+        {message.text}
       </div>
-    )
-  }
-  return <Answer text={message.text} />
+    </div>
+  )
 }
 
 function Working({ tool }: { tool: string | null }) {
@@ -35,10 +36,10 @@ function Working({ tool }: { tool: string | null }) {
   }, [])
 
   return (
-    <div className="flex items-center gap-2 px-1 py-0.5 text-[12px] text-muted">
+    <div className="flex items-center gap-2 px-1 py-0.5 text-sm text-muted">
       <Pulse />
       <span>{tool ? `Reading — ${tool}` : 'Thinking'}</span>
-      {seconds > 2 && <span className="tabular-nums opacity-70">{seconds}s</span>}
+      {seconds > 2 && <span className="tabular-nums text-faint">{seconds}s</span>}
     </div>
   )
 }
@@ -85,7 +86,7 @@ export function MessageList({
       )}
 
       {empty && agentFound && (
-        <p className="px-1 py-6 text-[12px] leading-relaxed text-muted">
+        <p className="px-1 py-6 text-sm leading-relaxed text-muted">
           Ask about the code in this repo. Answers stay on your screen and never reach a shared one.
         </p>
       )}
@@ -94,43 +95,33 @@ export function MessageList({
         <Bubble key={message.id} message={message} />
       ))}
 
-      {/* Marked apart from answers you asked for. Something that arrived
-          unprompted has to be visibly different, or it reads as a reply to a
-          question you never asked. */}
       {suggestion && (
-        <Surface level="card" className="border-l-2 border-accent px-3 py-2.5">
-          <div className="mb-1 flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-text">
-              Noticed
-            </span>
-            <button
-              type="button"
-              onClick={onDismissSuggestion}
-              className="ml-auto text-[11px] text-muted transition-colors hover:text-ink"
-            >
+        <Callout
+          title="Noticed"
+          action={
+            <Button variant="ghost" size="xs" tight onClick={onDismissSuggestion}>
               Dismiss
-            </button>
-          </div>
+            </Button>
+          }
+        >
           <Markdown text={suggestion.text} />
-        </Surface>
+        </Callout>
       )}
 
       {streaming && <Answer text={streaming} />}
       {busy && !streaming && <Working tool={tool} />}
+
       {error && (
         <Notice tone="danger">
           <p>{error}</p>
           {/* Signing in only happens in the CLI's interactive session, so the
               button opens a terminal there rather than pretending to do it. */}
           {errorCode === 'expiredLogin' && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mt-2"
-              onClick={() => send({ type: 'signIn' })}
-            >
-              Open terminal to sign in
-            </Button>
+            <div className="mt-2">
+              <Button size="sm" onClick={() => send({ type: 'signIn' })}>
+                Open terminal to sign in
+              </Button>
+            </div>
           )}
         </Notice>
       )}

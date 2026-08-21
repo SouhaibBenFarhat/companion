@@ -46,6 +46,13 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # Named separately from the bundle build so a token or kit rule failure
+      # reads as itself rather than as "packaging broke".
+      - name: Check the interface rules
+        run: |
+          npm --prefix web ci
+          npm --prefix web test
+
       # Catches packaging breakage (Info.plist, icon, the web build, codesign)
       # on the PR instead of on release day.
       - name: Build the app bundle

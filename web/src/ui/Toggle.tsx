@@ -1,9 +1,14 @@
-import { cx, focusRing } from './styles'
+import { cx } from './variants'
 
-/// A switch for something that is either on or off.
-///
-/// A checkbox reads as "tick this to agree". A switch reads as "this is
-/// running", which is what a capture setting actually is.
+/**
+ * A switch.
+ *
+ * A checkbox reads as "tick this to agree". A switch reads as "this is
+ * running", which is what a capture setting actually is.
+ *
+ * Hand-built rather than taken from Radix: a `<button role="switch">` already
+ * gets Space and Enter from the platform, so there is nothing to gain.
+ */
 export function Toggle({
   checked,
   onChange,
@@ -18,37 +23,32 @@ export function Toggle({
   disabled?: boolean
 }) {
   return (
-    <label
-      className={cx(
-        'flex cursor-pointer gap-3',
-        hint ? 'items-start' : 'items-center gap-2',
-        disabled && 'cursor-not-allowed opacity-50',
-      )}
-    >
+    <label className={cx('flex gap-3', hint ? 'items-start' : 'items-center gap-2')}>
       <button
         type="button"
         role="switch"
+        data-pressable
         aria-checked={checked}
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cx(
-          'relative mt-0.5 h-[18px] w-[30px] shrink-0 rounded-full transition-colors',
-          checked ? 'bg-accent' : 'bg-control-active',
-          focusRing,
+          'relative mt-0.5 h-[var(--switch-h)] w-[var(--switch-w)] shrink-0 rounded-full',
+          checked ? 'bg-accent [--surface:var(--a-fill)]' : 'bg-control [--surface:var(--s-4)]',
         )}
       >
         <span
           className={cx(
-            'absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white transition-[left] duration-150',
-            checked ? 'left-[14px]' : 'left-[2px]',
+            'absolute top-[var(--switch-gap)] h-[var(--switch-knob)] w-[var(--switch-knob)] rounded-full transition-[left]',
+            checked ? 'left-[var(--switch-travel)]' : 'left-[var(--switch-gap)]',
           )}
+          style={{ background: 'var(--on-fill)' }}
         />
       </button>
 
       <span className="min-w-0 flex-1">
-        <span className={cx('block font-medium text-ink', hint ? 'text-[12px]' : 'text-[11px]')}>{label}</span>
-        {hint && <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">{hint}</span>}
+        <span className={cx('block font-medium text-ink', hint ? 'text-sm' : 'text-xs')}>{label}</span>
+        {hint && <span className="mt-0.5 block text-xs leading-relaxed text-muted">{hint}</span>}
       </span>
     </label>
   )

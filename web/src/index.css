@@ -1,96 +1,6 @@
 @import 'tailwindcss';
-
-/* ---------------------------------------------------------------------------
-   Colour
-   ---------------------------------------------------------------------------
-   Built on OKLCH rather than HSL. In HSL the same lightness number looks very
-   different on one hue than another, so a palette rotated around a hue comes
-   out uneven and every colour needs hand-fixing. OKLCH is perceptually even.
-
-   Surfaces are named by ROLE, not by a number, because the panel has four
-   distinct jobs and "level 2" tells you nothing about which one:
-
-     well     the scrolling conversation — recedes, the eye rests here
-     chrome   header and composer — the frame around the well
-     card     message bubbles, inputs, controls — sits on top
-     overlay  menus and popovers — above everything
-
-   Depth comes from those steps plus a hairline border, never a drop shadow,
-   which looks wrong on a floating macOS panel.
---------------------------------------------------------------------------- */
-
-:root {
-  color-scheme: light dark;
-
-  --c-well: oklch(93.6% 0.006 285 / 0.74);
-  --c-chrome: oklch(97.2% 0.004 285 / 0.84);
-  --c-card: oklch(100% 0 0 / 0.96);
-  --c-overlay: oklch(100% 0 0 / 0.985);
-  /* Rows inside a menu need a hover defined against the MENU, not against the
-     panel. `control-hover` is tuned for chrome and cards, which sit darker —
-     on an overlay it lands at the same lightness and disappears. */
-  --c-overlay-hover: oklch(93% 0.008 285);
-  --c-overlay-active: oklch(89% 0.011 285);
-
-  --c-line: oklch(88% 0.008 285);
-  --c-line-strong: oklch(79% 0.012 285);
-
-  --c-control: oklch(100% 0 0);
-  --c-control-hover: oklch(96.5% 0.005 285);
-  --c-control-active: oklch(93% 0.007 285);
-
-  /* Input wells sit BELOW the chrome around them, not above it. */
-  --c-input: oklch(94.5% 0.006 285 / 0.96);
-  --c-input-focus: oklch(97.5% 0.004 285 / 0.99);
-
-  --c-text: oklch(25% 0.02 285);
-  --c-muted: oklch(52% 0.02 285);
-
-  /* Filled-button background, and the same hue as text on a plain background.
-     Kept apart because a colour readable as text is too dark to fill a button
-     in dark mode, and vice versa. */
-  --c-accent: oklch(55% 0.19 285);
-  --c-accent-hover: oklch(49% 0.19 285);
-  --c-accent-fg: oklch(99% 0 0);
-  --c-accent-text: oklch(48% 0.19 285);
-
-  --c-code: oklch(96% 0.005 285);
-  --c-danger: oklch(52% 0.19 25);
-  --c-danger-soft: oklch(95% 0.03 25);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --c-well: oklch(14.5% 0.010 285 / 0.62);
-    --c-chrome: oklch(19.5% 0.012 285 / 0.74);
-    --c-card: oklch(27.5% 0.017 285 / 0.94);
-    --c-overlay: oklch(31% 0.019 285 / 0.985);
-    --c-overlay-hover: oklch(38% 0.022 285);
-    --c-overlay-active: oklch(43% 0.024 285);
-
-    --c-line: oklch(32% 0.016 285);
-    --c-line-strong: oklch(43% 0.021 285);
-
-    --c-control: oklch(26% 0.014 285);
-    --c-control-hover: oklch(31% 0.016 285);
-    --c-control-active: oklch(35% 0.018 285);
-
-    --c-input: oklch(12.5% 0.010 285 / 0.9);
-    --c-input-focus: oklch(15% 0.011 285 / 0.96);
-
-    --c-text: oklch(94% 0.004 285);
-    --c-muted: oklch(69% 0.014 285);
-
-    --c-accent: oklch(58% 0.19 285);
-    --c-accent-hover: oklch(63% 0.18 285);
-    --c-accent-fg: oklch(99% 0 0);
-    --c-accent-text: oklch(78% 0.13 285);
-
-    --c-code: oklch(14% 0.009 285);
-    --c-danger: oklch(70% 0.16 25);
-    --c-danger-soft: oklch(26% 0.05 25);
-  }
-}
+@import './ui/tokens.css';
+@import './ui/base.css';
 
 /* `inline` keeps the var() reference instead of baking the value in, which is
    what lets one stylesheet follow the system appearance at runtime. */
@@ -99,89 +9,45 @@
   --color-chrome: var(--c-chrome);
   --color-card: var(--c-card);
   --color-overlay: var(--c-overlay);
-  --color-overlay-hover: var(--c-overlay-hover);
-  --color-overlay-active: var(--c-overlay-active);
+  --color-control: var(--c-control);
+  --color-input: var(--c-input);
+  --color-code: var(--c-code);
 
   --color-line: var(--c-line);
   --color-line-strong: var(--c-line-strong);
 
-  --color-control: var(--c-control);
-  --color-control-hover: var(--c-control-hover);
-  --color-control-active: var(--c-control-active);
-  --color-input: var(--c-input);
-  --color-input-focus: var(--c-input-focus);
-
-  --color-ink: var(--c-text);
+  --color-ink: var(--c-ink);
   --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
 
   --color-accent: var(--c-accent);
   --color-accent-hover: var(--c-accent-hover);
-  --color-accent-fg: var(--c-accent-fg);
   --color-accent-text: var(--c-accent-text);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-accent-fg: var(--c-accent-fg);
 
-  --color-code: var(--c-code);
   --color-danger: var(--c-danger);
+  --color-danger-text: var(--c-danger-text);
   --color-danger-soft: var(--c-danger-soft);
+
+  --color-accent-line: var(--c-accent-line);
+  --color-danger-line: var(--c-danger-line);
+  --color-grab: var(--c-grab);
+  --color-grab-hover: var(--c-grab-hover);
+
+  --text-2xs: var(--text-2xs);
+  --text-xs: var(--text-xs);
+  --text-sm: var(--text-sm);
+  --text-md: var(--text-md);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --tracking-caps: var(--tracking-caps);
 
   --font-sans: system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  /* Transparent on purpose: the blurred material lives in AppKit, behind the
-     web view. Tinting here as well would stack two layers and defeat it.
-     Body text still never sits on raw blur — cards keep their own opacity. */
-  background: transparent;
-  color: var(--c-text);
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 13px;
-  line-height: 1.55;
-  -webkit-font-smoothing: antialiased;
-  /* The window is borderless; the rounded corner lives here. */
-  border-radius: 12px;
-  overflow: hidden;
-  cursor: default;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* The body is `cursor: default` for a native feel, which left every button
-   looking inert. Deliberately a bare element selector so any cursor utility —
-   `cursor-grab` on the drag surfaces — still wins on specificity. */
-button:not(:disabled) {
-  cursor: pointer;
-}
-
-/* Only the conversation is selectable — you copy answers, not chrome. */
-.selectable {
-  -webkit-user-select: text;
-  user-select: text;
-  cursor: auto;
-}
-
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: color-mix(in oklch, var(--c-muted) 32%, transparent);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in oklch, var(--c-muted) 52%, transparent);
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 /* ---------------------------------------------------------------------------

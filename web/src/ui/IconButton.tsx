@@ -1,41 +1,69 @@
-import { cx, disabled, focusRing } from './styles'
+import {
+  appearance,
+  cx,
+  pressed as pressedTone,
+  square,
+  type Size,
+  type Tone,
+  type Variant,
+} from './variants'
+
+type NativeButton = Omit<React.ComponentPropsWithRef<'button'>, 'className' | 'aria-label' | 'title'>
 
 /**
- * Square icon-only button.
+ * An icon-only button.
  *
- * `label` is required: an icon with no accessible name is invisible to
- * anything that isn't looking at it, and it doubles as the tooltip.
+ * `label` is required. An icon with no accessible name is invisible to anything
+ * not looking at it, and it doubles as the macOS tooltip — which is why the kit
+ * ships no Tooltip component. The system one is real, delayed correctly, and is
+ * one fewer floating surface to dismiss in a panel where dismissal is the thing
+ * that keeps breaking.
  */
 export function IconButton({
   label,
-  size = 'md',
-  active = false,
-  className,
+  size = 'sm',
+  tone = 'neutral',
+  variant = 'ghost',
+  pressed = false,
+  badge = false,
+  busy = false,
   children,
   ...props
-}: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> & {
+}: NativeButton & {
   label: string
-  size?: 'sm' | 'md'
-  active?: boolean
+  size?: Size
+  tone?: Tone
+  variant?: Variant
+  /** A state the control holds, like listening. Not a hover. */
+  pressed?: boolean
+  /** A dot, for a setting that changes behaviour and is otherwise invisible. */
+  badge?: boolean
+  /** Work in flight. Pulses rather than spinning — it is 14 points wide. */
+  busy?: boolean
 }) {
   return (
     <button
       type="button"
-      title={label}
+      data-pressable
+      data-pressed={pressed}
       aria-label={label}
+      aria-pressed={pressed}
+      title={label}
       {...props}
       className={cx(
-        'grid shrink-0 place-items-center rounded-md transition-colors',
-        size === 'sm' ? 'h-6 w-6' : 'h-7 w-7',
-        active
-          ? 'bg-control-active text-ink'
-          : 'text-muted hover:bg-control-hover hover:text-ink active:bg-control-active',
-        focusRing,
-        disabled,
-        className,
+        'relative grid shrink-0 place-items-center rounded-md',
+        square[size],
+        pressed ? pressedTone[tone] : appearance[variant][tone],
+        busy && 'animate-pulse',
       )}
     >
       {children}
+      {badge && (
+        <span
+          aria-hidden="true"
+          className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-accent"
+        />
+      )}
     </button>
   )
 }
