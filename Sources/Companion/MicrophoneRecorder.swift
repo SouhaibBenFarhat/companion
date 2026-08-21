@@ -71,49 +71,22 @@ final class MicrophoneRecorder {
     ///   default, which on a Mac with several is a coin toss — Continuity can
     ///   hand it the iPhone microphone without warning.
     func start(echoCancellation: Bool, device: AudioInputDevice? = nil) throws {
-        // Give up the least valuable thing first.
-        //
-        // A USB microphone can refuse the voice processor outright — the Brio
-        // fails initialisation with -10875 while the same device opens fine
-        // without it — and a device another app holds can refuse everything.
-        // Neither is knowable in advance, so this tries in the order of what
-        // is worth keeping: your microphone matters more than echo
-        // cancellation, because a gate in software covers some of what the
-        // processor does and nothing covers recording the wrong microphone.
-        var attempts: [(device: AudioInputDevice?, echo: Bool, note: String)] = []
-        if echoCancellation {
-            attempts.append((device, true, ""))
-            attempts.append((device, false, "without echo cancellation"))
-        } else {
-            attempts.append((device, false, ""))
+        do {
+            try open(echoCancellation: echoCancellation, device: device)
+        } catch {
+            // One fallback, not a ladder. The four-rung version existed to
+            // escape -10875, which was caused by connecting the shared
+            // input/output unit to the mixer — not by the device and not by
+            // echo cancellation. With that line gone the only case left worth
+            // handling is a device genuinely held by another app.
+            guard let device else { throw error }
+            SessionLog.shared.write(
+                "mic",
+                "\(device.name) would not open (\(error.localizedDescription)), using the system default"
+            )
+            onDegraded?("\(device.name) would not open. Listening on the system default microphone.")
+            try open(echoCancellation: echoCancellation, device: nil)
         }
-        if device != nil {
-            attempts.append((nil, echoCancellation, "on the system default microphone"))
-            if echoCancellation {
-                attempts.append((nil, false, "on the system default microphone, without echo cancellation"))
-            }
-        }
-
-        var lastError: Error?
-        for attempt in attempts {
-            do {
-                try open(echoCancellation: attempt.echo, device: attempt.device)
-                if !attempt.note.isEmpty {
-                    let name = device?.name ?? "The microphone"
-                    SessionLog.shared.write("mic", "started \(attempt.note)")
-                    onDegraded?("\(name) would not open. Listening \(attempt.note).")
-                }
-                return
-            } catch {
-                lastError = error
-                SessionLog.shared.write(
-                    "mic",
-                    "attempt failed (\(attempt.device?.name ?? "system default"), echo=\(attempt.echo)): \(error.localizedDescription)"
-                )
-            }
-        }
-
-        throw lastError ?? MicrophoneError.noInputFormat
     }
 
     /// Reported when listening started, but not the way it was asked for.
@@ -170,9 +143,20 @@ final class MicrophoneRecorder {
             }
         }
 
-        // Voice processing needs a rendering graph to engage at all.
-        engine.connect(input, to: engine.mainMixerNode, format: nil)
-        engine.mainMixerNode.outputVolume = 0
+        // Nothing is connected to the mixer, on purpose.
+        //
+        // On macOS the input node and the output node are the SAME audio unit —
+        // `engine.inputNode.auAudioUnit === engine.outputNode.auAudioUnit` is
+        // literally true. Touching `mainMixerNode` pulls the output half of that
+        // unit into the graph, so it then has to PLAY audio on whichever device
+        // was chosen for INPUT. The Logitech Brio has two input channels and no
+        // output channels, so the output format was invalid and the engine
+        // refused to start: -10875, with `IsFormatSampleRateAndChannelCountValid(outputHWFormat)`
+        // named in the error itself.
+        //
+        // The comment that used to be here said this line was needed for voice
+        // processing to engage. That was the opposite of the truth, and it is
+        // why six rounds of fixing looked at the microphone instead of the line.
         engine.prepare()
 
         // Read the format only now — voice processing changed it.

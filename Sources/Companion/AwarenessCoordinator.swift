@@ -33,14 +33,9 @@ final class AwarenessCoordinator {
     var isListening: Bool { capture.isRunning }
     var callAppName: String? { capture.callAppName }
 
-    /// The format the transcribers are fed. Fixed, so the converter in each
-    /// recorder has one target.
-    private let workingFormat = AVAudioFormat(
-        commonFormat: .pcmFormatFloat32,
-        sampleRate: 16_000,
-        channels: 1,
-        interleaved: false
-    )
+    /// When the user turned listening on, so each stream can say how far into
+    /// the session it began.
+    private var listeningStartedAt = Date.distantPast.timeIntervalSinceReferenceDate
 
     init() {
         capture.onError = { [weak self] message in self?.onError?(message) }
@@ -68,6 +63,7 @@ final class AwarenessCoordinator {
     private(set) var settings = AwarenessSettings()
 
     func start(settings: AwarenessSettings) {
+        listeningStartedAt = Date().timeIntervalSinceReferenceDate
         guard !isListening else { return }
         self.settings = settings
         guard SpeechSupport.isAvailable else {
@@ -114,6 +110,10 @@ final class AwarenessCoordinator {
                 transcriber.onError = { [weak self] message in self?.onError?(message) }
                 transcribers[speaker] = transcriber
 
+                // Where in the session this stream begins. The analyzer counts
+                // from zero for each one, so without this the second speaker's
+                // first word sorts against the first speaker's first word.
+                transcriber.sessionOffset = max(0, Date().timeIntervalSinceReferenceDate - listeningStartedAt)
                 Task { await transcriber.start() }
             }
         }
@@ -168,19 +168,27 @@ final class AwarenessCoordinator {
     private func consume(_ chunk: PCMChunk) {
         guard #available(macOS 26.0, *),
               let transcriber = transcribers[chunk.speaker] as? Transcriber,
-              let format = workingFormat,
-              let buffer = Self.makeBuffer(from: chunk, format: format)
+              let buffer = Self.makeBuffer(from: chunk)
         else { return }
 
-        // One clock for both streams. Each analyzer's own timeline starts at
-        // zero, so this is what stops an answer appearing before its question.
-        let seconds = capture.seconds(for: chunk.hostTimeNanoseconds, speaker: chunk.speaker)
-        let startTime = CMTime(seconds: max(0, seconds), preferredTimescale: 1_000)
-        transcriber.append(buffer, startTime: startTime)
+        transcriber.append(buffer)
     }
 
-    private static func makeBuffer(from chunk: PCMChunk, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    /// Wraps a chunk in a buffer that says what it actually is.
+    ///
+    /// Built from the chunk's own sample rate, not from a format decided
+    /// elsewhere. It used to be built in a fixed 16 kHz mono format while the
+    /// system tap delivers 48 kHz, so every block of call audio was handed over
+    /// claiming to be three times longer than it was — and the transcriber's
+    /// converter, told the input was already 16 kHz, had nothing to correct.
+    private static func makeBuffer(from chunk: PCMChunk) -> AVAudioPCMBuffer? {
         guard !chunk.samples.isEmpty,
+              let format = AVAudioFormat(
+                  commonFormat: .pcmFormatFloat32,
+                  sampleRate: chunk.sampleRate,
+                  channels: 1,
+                  interleaved: false
+              ),
               let buffer = AVAudioPCMBuffer(
                   pcmFormat: format,
                   frameCapacity: AVAudioFrameCount(chunk.samples.count)
