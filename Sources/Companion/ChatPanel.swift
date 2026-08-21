@@ -20,6 +20,12 @@ final class ChatPanel: NSPanel {
     /// `.nonactivatingPanel` is there to avoid.
     override var canBecomeMain: Bool { false }
 
+    /// Whether screen capture skips this window.
+    var isHiddenFromScreenShare: Bool {
+        get { sharingType == .none }
+        set { sharingType = newValue ? .none : .readOnly }
+    }
+
     static func make(contentRect: NSRect) -> ChatPanel {
         let panel = ChatPanel(
             contentRect: contentRect,
@@ -31,6 +37,10 @@ final class ChatPanel: NSPanel {
         // The whole reason this app exists: screen capture skips windows with
         // sharing turned off, so the panel stays on your display and never
         // reaches the shared stream in Meet, Teams, Zoom or Slack.
+        //
+        // Changeable at runtime, because a window nobody can capture is also a
+        // window nobody can screenshot, demo or record — which makes it hard
+        // to work on and impossible to show anyone.
         panel.sharingType = .none
 
         panel.level = .floating

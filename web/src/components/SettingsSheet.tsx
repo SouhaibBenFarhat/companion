@@ -3,7 +3,12 @@ import { send } from '../lib/bridge'
 import { Bar, Button, Field, Input, Notice, Select, Textarea, Toggle } from '../ui'
 import { FolderIcon, iconSize, iconStroke } from '../ui/icons'
 import { Permissions } from './Permissions'
-import type { AgentInfo, Permissions as PermissionsPayload, SettingsPayload } from '../lib/types'
+import type {
+  AgentInfo,
+  InputDevice,
+  Permissions as PermissionsPayload,
+  SettingsPayload,
+} from '../lib/types'
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -19,12 +24,14 @@ export function SettingsSheet({
   agent,
   repository,
   permissions,
+  inputDevices,
   onClose,
 }: {
   settings: SettingsPayload
   agent: AgentInfo
   repository: string
   permissions: PermissionsPayload
+  inputDevices: InputDevice[]
   onClose: () => void
 }) {
   const [draft, setDraft] = useState(settings)
@@ -39,6 +46,8 @@ export function SettingsSheet({
       permission: next.permission,
       systemPrompt: next.systemPrompt,
       suggestionsEnabled: next.suggestionsEnabled,
+      microphoneDeviceUID: next.microphoneDeviceUID,
+      hideFromScreenShare: next.hideFromScreenShare,
     })
   }
 
@@ -109,12 +118,50 @@ export function SettingsSheet({
         </Group>
 
         <Group title="During a call">
+          <Field
+            label="Microphone"
+            htmlFor="microphone"
+            hint={
+              settings.microphoneMissing
+                ? 'The microphone you chose is not connected. The system default is being used until it comes back.'
+                : 'Which input records your side. The system default follows macOS, which can hand your Mac the iPhone microphone without warning.'
+            }
+          >
+            <Select
+              id="microphone"
+              value={draft.microphoneDeviceUID}
+              onChange={(e) => apply({ microphoneDeviceUID: e.target.value })}
+            >
+              <option value="">System default</option>
+              {inputDevices.map((device) => (
+                <option key={device.uid} value={device.uid}>
+                  {device.name}
+                  {device.isSystemDefault ? ' (system default)' : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
           <Toggle
             label="Speak up without being asked"
             hint="Off, Companion listens and answers when you ask. On, it can interrupt with something it thinks you would miss — at most three times a minute, never while you are talking."
             checked={draft.suggestionsEnabled}
             onChange={(value) => apply({ suggestionsEnabled: value })}
           />
+        </Group>
+
+        <Group title="Screen share">
+          <Toggle
+            label="Hide the panel from screen sharing"
+            hint="On, screen capture skips this window — the reason Companion exists. Off, it appears like any other window, which is what you want to record a demo or take a screenshot of it."
+            checked={draft.hideFromScreenShare}
+            onChange={(value) => apply({ hideFromScreenShare: value })}
+          />
+          {!draft.hideFromScreenShare && (
+            <Notice tone="danger">
+              The panel is visible to anyone you share your screen with.
+            </Notice>
+          )}
         </Group>
 
         <Group title="Permissions">

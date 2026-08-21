@@ -30,6 +30,19 @@ public struct Settings: Codable, Equatable, Sendable {
     public var panelWidth: Double
     public var panelHeight: Double
 
+    /// Which microphone to record. Empty means the system default.
+    ///
+    /// Stored as the device's unique identifier rather than its name, so the
+    /// choice survives a rename and cannot match the wrong device.
+    public var microphoneDeviceUID: String
+
+    /// Whether the panel is hidden from screen capture.
+    ///
+    /// On by default — it is the reason the app exists. Turned off for demos,
+    /// screen recordings, and development, where a window nobody can capture
+    /// is a window nobody can show or screenshot.
+    public var hideFromScreenShare: Bool
+
     /// Show/hide shortcut. Carbon key code plus modifier mask.
     public var hotKeyCode: UInt32
     public var hotKeyModifiers: UInt32
@@ -47,6 +60,8 @@ public struct Settings: Codable, Equatable, Sendable {
         panelOriginY: Double? = nil,
         panelWidth: Double = 460,
         panelHeight: Double = 560,
+        microphoneDeviceUID: String = "",
+        hideFromScreenShare: Bool = true,
         hotKeyCode: UInt32 = 49, // Space
         hotKeyModifiers: UInt32 = 2048, // Option
         awareness: AwarenessSettings = AwarenessSettings()
@@ -60,6 +75,8 @@ public struct Settings: Codable, Equatable, Sendable {
         self.panelOriginY = panelOriginY
         self.panelWidth = panelWidth
         self.panelHeight = panelHeight
+        self.microphoneDeviceUID = microphoneDeviceUID
+        self.hideFromScreenShare = hideFromScreenShare
         self.hotKeyCode = hotKeyCode
         self.hotKeyModifiers = hotKeyModifiers
         self.awareness = awareness
@@ -78,6 +95,10 @@ public struct Settings: Codable, Equatable, Sendable {
         panelOriginY = try container.decodeIfPresent(Double.self, forKey: .panelOriginY)
         panelWidth = try container.decodeIfPresent(Double.self, forKey: .panelWidth) ?? defaults.panelWidth
         panelHeight = try container.decodeIfPresent(Double.self, forKey: .panelHeight) ?? defaults.panelHeight
+        microphoneDeviceUID = try container.decodeIfPresent(String.self, forKey: .microphoneDeviceUID)
+            ?? defaults.microphoneDeviceUID
+        hideFromScreenShare = try container.decodeIfPresent(Bool.self, forKey: .hideFromScreenShare)
+            ?? defaults.hideFromScreenShare
         hotKeyCode = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyCode) ?? defaults.hotKeyCode
         hotKeyModifiers = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyModifiers)
             ?? defaults.hotKeyModifiers
