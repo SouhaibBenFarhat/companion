@@ -27,12 +27,19 @@ export function Header({
     >
       {/* Grab handle. The only visible hint that the panel moves, so it sits
           top-centre where the eye goes, and brightens on hover. */}
+      {/* A grab strip above the controls. Everything in the header drags, but
+          the buttons sit close together — this leaves a band you can land on
+          without aiming, which is what makes the window feel movable. */}
       <div
         aria-hidden="true"
-        className="absolute inset-x-0 top-1.5 mx-auto h-1 w-9 rounded-full bg-muted/30 transition-colors group-hover:bg-muted/60"
+        className="absolute inset-x-0 top-0 h-7"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-[10px] mx-auto h-1 w-9 rounded-full bg-muted/30 transition-colors group-hover:bg-muted/60"
       />
 
-      <div className="flex items-center gap-1 px-2 pb-2 pt-4">
+      <div className="flex items-center gap-1 px-2 pb-2 pt-7">
         <button
           type="button"
           title={`${repository} — click to change, drag to move`}
