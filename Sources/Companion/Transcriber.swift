@@ -26,6 +26,10 @@ final class Transcriber {
     private var resultsTask: Task<Void, Never>?
     private var reservedLocale: Locale?
 
+    /// The last timestamp handed over, so the next one can never precede it.
+    private var lastStartTime: CMTime?
+    private var nudged = 0
+
     /// The format the analyzer asked for.
     ///
     /// Asked, never assumed. Feeding it a format of our own choosing traps
@@ -114,6 +118,9 @@ final class Transcriber {
     }
 
     func stop() async {
+        // A fresh analyzer starts a fresh clock.
+        lastStartTime = nil
+        nudged = 0
         inputContinuation?.finish()
         inputContinuation = nil
         inputStream = nil
@@ -146,9 +153,25 @@ final class Transcriber {
     /// answer before the question.
     func append(_ buffer: AVAudioPCMBuffer, startTime: CMTime) {
         guard let continuation = inputContinuation, let required = requiredFormat else { return }
-
         guard let converted = convert(buffer, to: required) else { return }
-        continuation.yield(AnalyzerInput(buffer: converted, bufferStartTime: startTime))
+
+        // Never backwards. `SpeechAnalyzer` rejects the whole input sequence
+        // with "Audio input timestamp overlaps or precedes prior audio input"
+        // and stops transcribing, so one bad timestamp costs the rest of the
+        // call. The clock is fixed upstream; this is here because a stream the
+        // user cannot restart is too expensive to lose to an arithmetic edge —
+        // a device waking up, a latency figure that changed mid-run.
+        var start = startTime
+        if let last = lastStartTime, start <= last {
+            start = CMTimeAdd(last, CMTime(value: 1, timescale: start.timescale))
+            nudged += 1
+            if nudged == 1 || nudged % 200 == 0 {
+                SessionLog.shared.write("transcribe", "\(speaker) timestamp nudged forward (\(nudged))")
+            }
+        }
+        lastStartTime = start
+
+        continuation.yield(AnalyzerInput(buffer: converted, bufferStartTime: start))
     }
 
     /// Converts into the analyzer's format, reusing the converter across

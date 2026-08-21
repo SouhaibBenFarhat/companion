@@ -58,15 +58,21 @@ enum AudioDevices {
             UInt32(MemoryLayout<AudioDeviceID>.size)
         )
 
-        let initialised = AudioUnitInitialize(unit)
+        // Try to put it back, but do not care if that fails.
+        //
+        // The unit's stream format belongs to the old device, so initialising
+        // it here can fail with -10875 even though the device was set
+        // perfectly well. The engine initialises the input node itself when it
+        // prepares, with a format it works out from the device that is now
+        // attached — which is the whole reason for changing the device first.
+        // Treating this as the failure meant a working microphone was thrown
+        // away and the session fell back to the default.
+        _ = AudioUnitInitialize(unit)
 
         if status != noErr {
             SessionLog.shared.write("mic", "could not select \(device.name) (\(status))")
         }
-        if initialised != noErr {
-            SessionLog.shared.write("mic", "could not reinitialise the input unit (\(initialised))")
-        }
-        return status == noErr && initialised == noErr
+        return status == noErr
     }
 
     /// What the system is currently using, as one comparable string.
