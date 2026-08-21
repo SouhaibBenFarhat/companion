@@ -39,10 +39,11 @@ export function Composer({
     <Bar edge="top">
       <div className="p-2.5">
         <Well>
-          {/* Send sits with the writing, not with the settings. It is the one
-              control that acts on what you typed, and at the end of the text is
-              where your eye already is. */}
-          <div className="flex items-end gap-1.5 px-2.5 pb-1.5 pt-2.5">
+          {/* Send sits with the writing, not with the settings — it is the one
+              control that acts on what you typed. Centred against the field
+              rather than pinned to its floor, so it holds still as the box
+              grows instead of walking down the panel line by line. */}
+          <div className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-2.5">
             <div className="min-w-0 flex-1">
               <AutoTextarea
                 ref={field}
