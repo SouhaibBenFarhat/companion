@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Header } from './components/Header'
 import { MessageList } from './components/MessageList'
 import { Composer } from './components/Composer'
-import { HistoryMenu } from './components/HistoryMenu'
 import { SettingsSheet } from './components/SettingsSheet'
 import { AwarenessBar } from './components/AwarenessBar'
 import { ComposerControls } from './components/ComposerControls'
@@ -115,20 +114,23 @@ export function App() {
   }, [showHistory, showSettings])
 
   if (!state) {
-    return <div className="grid h-full place-items-center bg-well text-[12px] text-muted">Loading…</div>
+    return <div className="grid h-full place-items-center bg-well text-sm text-muted">Loading…</div>
   }
 
   return (
     <div className="relative flex h-full flex-col bg-well">
       <Header
         repository={state.repository}
+        hasRepository={state.hasRepository}
+        conversations={state.conversations}
+        currentId={state.currentId}
         historyOpen={showHistory}
         settingsOpen={showSettings}
         onChat={() => {
           setShowSettings(false)
           setShowHistory(false)
         }}
-        onHistory={() => setShowHistory((open) => !open)}
+        onHistoryOpenChange={setShowHistory}
         onSettings={() => setShowSettings((open) => !open)}
       />
 
@@ -136,7 +138,6 @@ export function App() {
         listening={state.listening}
         levels={levels}
         error={captureError}
-        transcript={transcript}
         screen={screen}
         suggestionsEnabled={state.settings.suggestionsEnabled}
         onSuggestionsChange={(value) =>
@@ -156,6 +157,7 @@ export function App() {
           settings={state.settings}
           agent={state.agent}
           repository={state.repository}
+          hasRepository={state.hasRepository}
           permissions={state.permissions}
           inputDevices={state.inputDevices}
           onClose={() => setShowSettings(false)}
@@ -172,6 +174,7 @@ export function App() {
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
             suggestion={suggestion}
+            transcript={transcript}
             onDismissSuggestion={() => setSuggestion(null)}
           />
           <Composer
@@ -191,14 +194,6 @@ export function App() {
             }
           />
         </>
-      )}
-
-      {showHistory && (
-        <HistoryMenu
-          conversations={state.conversations}
-          currentId={state.currentId}
-          onClose={() => setShowHistory(false)}
-        />
       )}
     </div>
   )

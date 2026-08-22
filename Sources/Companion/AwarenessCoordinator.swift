@@ -9,7 +9,9 @@ import Foundation
 /// transcript. Everything above this sees text; everything below it sees audio.
 final class AwarenessCoordinator {
     private let capture = CallCapture()
-    private var transcribers: [CaptureSpeaker: AnyObject] = [:]
+    /// One recogniser per speaker. Typed by the protocol, so the downcasts
+    /// and the `#available` blocks that used to be needed here are gone.
+    private var engines: [CaptureSpeaker: TranscriptionEngine] = [:]
     private(set) var transcript = TranscriptBuffer()
     private var screen: ScreenAwareness?
     private(set) var screenContext: ScreenContext?
@@ -33,14 +35,15 @@ final class AwarenessCoordinator {
     var isListening: Bool { capture.isRunning }
     var callAppName: String? { capture.callAppName }
 
-    /// The format the transcribers are fed. Fixed, so the converter in each
-    /// recorder has one target.
-    private let workingFormat = AVAudioFormat(
-        commonFormat: .pcmFormatFloat32,
-        sampleRate: 16_000,
-        channels: 1,
-        interleaved: false
-    )
+    /// When the user turned listening on, so each stream can say how far into
+    /// the session it began.
+    private var listeningStartedAt = Date.distantPast.timeIntervalSinceReferenceDate
+
+    /// Which recogniser to build. Set from Settings before listening starts.
+    var engineKind: TranscriptionEngineKind = .whisper
+
+    /// The file this call is being written to, when the user asked for one.
+    private var transcriptFile: TranscriptFile?
 
     init() {
         capture.onError = { [weak self] message in self?.onError?(message) }
@@ -68,6 +71,8 @@ final class AwarenessCoordinator {
     private(set) var settings = AwarenessSettings()
 
     func start(settings: AwarenessSettings) {
+        listeningStartedAt = Date().timeIntervalSinceReferenceDate
+        startTranscriptFile(if: settings.persistTranscript)
         guard !isListening else { return }
         self.settings = settings
         guard SpeechSupport.isAvailable else {
@@ -89,50 +94,91 @@ final class AwarenessCoordinator {
         watcher.start()
         screen = watcher
 
-        if #available(macOS 26.0, *) {
-            for speaker in CaptureSpeaker.allCases {
-                let transcriber = Transcriber(speaker: speaker)
-                transcriber.onFinal = { [weak self] text, start in
-                    guard let self else { return }
-                    self.transcript.appendFinal(text, speaker: speaker, at: start)
-                    self.publish()
+        for speaker in CaptureSpeaker.allCases {
+            guard let engine = makeEngine(for: speaker, settings: settings) else { continue }
 
-                    // No timer. A settled line from the other person is a real
-                    // event, and it is the only kind worth thinking about.
-                    if let reason = self.trigger.evaluate(
-                        text: text,
-                        speaker: speaker,
-                        userIsSpeaking: self.userIsSpeaking
-                    ) {
-                        self.onTrigger?(reason, text)
+            engine.onFinal = { [weak self] text, start in
+                guard let self else { return }
+                self.transcript.appendFinal(text, speaker: speaker, at: start)
+                self.publish()
+
+                // Written as it settles, not at the end. A transcript that only
+                // reaches disk on a clean quit is one you lose on the day
+                // something crashes mid-call — the day you wanted it.
+                if let file = self.transcriptFile {
+                    do {
+                        try file.append(speaker: speaker, text: text, at: start)
+                    } catch {
+                        SessionLog.shared.write("transcript", "could not write: \(error.localizedDescription)")
+                        self.transcriptFile = nil
+                        self.onError?("Could not save the transcript. Listening continues.")
                     }
                 }
-                transcriber.onVolatile = { [weak self] text, start in
-                    self?.transcript.setVolatile(text, speaker: speaker, at: start)
-                    self?.publish()
-                }
-                transcriber.onError = { [weak self] message in self?.onError?(message) }
-                transcribers[speaker] = transcriber
 
-                Task { await transcriber.start() }
+                // No timer. A settled line from the other person is a real
+                // event, and it is the only kind worth thinking about.
+                if let reason = self.trigger.evaluate(
+                    text: text,
+                    speaker: speaker,
+                    userIsSpeaking: self.userIsSpeaking
+                ) {
+                    self.onTrigger?(reason, text)
+                }
             }
+            engine.onVolatile = { [weak self] text, start in
+                self?.transcript.setVolatile(text, speaker: speaker, at: start)
+                self?.publish()
+            }
+            engine.onError = { [weak self] message in self?.onError?(message) }
+
+            // Where in the session this stream begins. Apple's engine counts
+            // from zero for each one, so without this the second speaker's
+            // first word sorts against the first speaker's first.
+            engine.sessionOffset = max(0, Date().timeIntervalSinceReferenceDate - listeningStartedAt)
+
+            engines[speaker] = engine
+            Task { await engine.start() }
         }
 
         onStateChanged?()
     }
 
+    /// Opens the file this call will be written to, or leaves it closed.
+    private func startTranscriptFile(if wanted: Bool) {
+        transcriptFile = nil
+        guard wanted else { return }
+
+        let now = Date()
+        let directory = TranscriptFile.directory(
+            in: StorageLocation.applicationSupportDirectory()
+        )
+        let file = TranscriptFile(url: directory.appendingPathComponent(TranscriptFile.name(for: now)))
+        do {
+            try file.begin(at: now)
+            transcriptFile = file
+            SessionLog.shared.write("transcript", "writing to \(file.url.lastPathComponent)")
+        } catch {
+            SessionLog.shared.write("transcript", "could not start: \(error.localizedDescription)")
+            onError?("Could not save the transcript. Listening continues.")
+        }
+    }
+
+    /// Where the transcripts are, for the panel to open in Finder.
+    var transcriptsDirectory: URL {
+        TranscriptFile.directory(in: StorageLocation.applicationSupportDirectory())
+    }
+
     func stop() {
+        transcriptFile = nil
         capture.stop()
         screen?.stop()
         screen = nil
         screenContext = nil
 
-        if #available(macOS 26.0, *) {
-            for case let transcriber as Transcriber in transcribers.values {
-                Task { await transcriber.stop() }
-            }
+        for engine in engines.values {
+            Task { await engine.stop() }
         }
-        transcribers = [:]
+        engines = [:]
         onStateChanged?()
         publish()
     }
@@ -166,21 +212,53 @@ final class AwarenessCoordinator {
     // MARK: - Audio in, text out
 
     private func consume(_ chunk: PCMChunk) {
-        guard #available(macOS 26.0, *),
-              let transcriber = transcribers[chunk.speaker] as? Transcriber,
-              let format = workingFormat,
-              let buffer = Self.makeBuffer(from: chunk, format: format)
-        else { return }
-
-        // One clock for both streams. Each analyzer's own timeline starts at
-        // zero, so this is what stops an answer appearing before its question.
-        let seconds = capture.seconds(for: chunk.hostTimeNanoseconds, speaker: chunk.speaker)
-        let startTime = CMTime(seconds: max(0, seconds), preferredTimescale: 1_000)
-        transcriber.append(buffer, startTime: startTime)
+        guard let engine = engines[chunk.speaker] else { return }
+        // The one clock both streams share. Whisper needs it because it is
+        // handed detached blocks with no timeline of their own; Apple's engine
+        // ignores it and counts frames instead.
+        engine.append(chunk, at: capture.seconds(for: chunk.hostTimeNanoseconds, speaker: chunk.speaker))
     }
 
-    private static func makeBuffer(from chunk: PCMChunk, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    /// Builds the recogniser the user picked, or nothing when this Mac cannot
+    /// run it.
+    private func makeEngine(
+        for speaker: CaptureSpeaker,
+        settings: AwarenessSettings
+    ) -> TranscriptionEngine? {
+        switch engineKind {
+        case .whisper:
+            return WhisperEngine(
+                speaker: speaker,
+                variant: .largeTurbo,
+                // Empty for now. The words a call is full of are known — this
+                // is where they go, worst-first, because Whisper keeps the tail
+                // of the prompt and only 111 tokens of it.
+                vocabulary: []
+            )
+        case .apple:
+            guard #available(macOS 26.0, *) else {
+                if let why = TranscriptionEngineKind.apple.unmetRequirement { onError?(why) }
+                return nil
+            }
+            return Transcriber(speaker: speaker)
+        }
+    }
+
+    /// Wraps a chunk in a buffer that says what it actually is.
+    ///
+    /// Built from the chunk's own sample rate, not from a format decided
+    /// elsewhere. It used to be built in a fixed 16 kHz mono format while the
+    /// system tap delivers 48 kHz, so every block of call audio was handed over
+    /// claiming to be three times longer than it was — and the transcriber's
+    /// converter, told the input was already 16 kHz, had nothing to correct.
+    private static func makeBuffer(from chunk: PCMChunk) -> AVAudioPCMBuffer? {
         guard !chunk.samples.isEmpty,
+              let format = AVAudioFormat(
+                  commonFormat: .pcmFormatFloat32,
+                  sampleRate: chunk.sampleRate,
+                  channels: 1,
+                  interleaved: false
+              ),
               let buffer = AVAudioPCMBuffer(
                   pcmFormat: format,
                   frameCapacity: AVAudioFrameCount(chunk.samples.count)

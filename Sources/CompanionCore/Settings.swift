@@ -1,5 +1,18 @@
 import Foundation
 
+/// Light, dark, or follow macOS.
+///
+/// The choice is applied to the window rather than to the page. The panel is a
+/// blurred AppKit material with a web view on top of it: setting the window's
+/// appearance flips the material AND the `prefers-color-scheme` the page reads,
+/// so the two can never disagree. Styling only the page would leave the blur
+/// behind it light while the content went dark.
+public enum Appearance: String, Codable, Sendable, CaseIterable {
+    case system
+    case light
+    case dark
+}
+
 /// User preferences plus the bits of window state we want back after a restart.
 ///
 /// Decoding fills in defaults for anything missing, so an older settings file
@@ -54,6 +67,12 @@ public struct Settings: Codable, Equatable, Sendable {
     public var hotKeyCode: UInt32
     public var hotKeyModifiers: UInt32
 
+    /// Which recogniser turns speech into text.
+    public var transcriptionEngine: TranscriptionEngineKind
+
+    /// Light, dark, or whatever macOS is doing.
+    public var theme: Appearance
+
     /// Listening and watching.
     public var awareness: AwarenessSettings
 
@@ -72,6 +91,8 @@ public struct Settings: Codable, Equatable, Sendable {
         hideFromScreenShare: Bool = true,
         hotKeyCode: UInt32 = 49, // Space
         hotKeyModifiers: UInt32 = 2048, // Option
+        transcriptionEngine: TranscriptionEngineKind = .whisper,
+        theme: Appearance = .system,
         awareness: AwarenessSettings = AwarenessSettings()
     ) {
         self.agent = agent
@@ -88,6 +109,8 @@ public struct Settings: Codable, Equatable, Sendable {
         self.hideFromScreenShare = hideFromScreenShare
         self.hotKeyCode = hotKeyCode
         self.hotKeyModifiers = hotKeyModifiers
+        self.transcriptionEngine = transcriptionEngine
+        self.theme = theme
         self.awareness = awareness
     }
 
@@ -113,6 +136,10 @@ public struct Settings: Codable, Equatable, Sendable {
         hotKeyCode = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyCode) ?? defaults.hotKeyCode
         hotKeyModifiers = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyModifiers)
             ?? defaults.hotKeyModifiers
+        transcriptionEngine = try container.decodeIfPresent(
+            TranscriptionEngineKind.self, forKey: .transcriptionEngine
+        ) ?? defaults.transcriptionEngine
+        theme = try container.decodeIfPresent(Appearance.self, forKey: .theme) ?? defaults.theme
         awareness = try container.decodeIfPresent(AwarenessSettings.self, forKey: .awareness)
             ?? defaults.awareness
     }
@@ -131,5 +158,15 @@ public struct Settings: Codable, Equatable, Sendable {
     public func repositoryURL(fileManager: FileManager = .default) -> URL {
         guard !defaultRepositoryPath.isEmpty else { return fileManager.homeDirectoryForCurrentUser }
         return URL(fileURLWithPath: (defaultRepositoryPath as NSString).expandingTildeInPath)
+    }
+
+    /// Whether the user has actually chosen a folder.
+    ///
+    /// Worth asking separately from `repositoryURL()`, which always returns
+    /// something. The fallback is the home folder, and an agent started there
+    /// will answer questions about "this repo" from whatever happens to be in
+    /// it — which is the whole machine.
+    public var hasRepository: Bool {
+        !defaultRepositoryPath.trimmingCharacters(in: .whitespaces).isEmpty
     }
 }

@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "build": "node tokens.test.mjs && node rules.test.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "node tokens.test.mjs && node rules.test.mjs"
   },
   "dependencies": {
     "highlight.js": "^11.10.0",
     "lucide-react": "^1.32.0",
+    "radix-ui": "^1.6.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.1",

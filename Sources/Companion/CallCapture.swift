@@ -38,6 +38,9 @@ final class CallCapture {
     /// addObserver(forName:) registers the returned token, not self, so keeping
     /// it is the only way to remove the observer later.
     private var configurationObserver: NSObjectProtocol?
+    /// Host time listening began. Survives a rebuild; cleared only when the
+    /// user actually stops.
+    private var sessionOrigin: UInt64?
     private var restartState = CaptureRestartPolicy.State()
     private let restartPolicy = CaptureRestartPolicy()
     private var settings = AwarenessSettings()
@@ -54,7 +57,16 @@ final class CallCapture {
     func start(settings: AwarenessSettings) {
         guard !isRunning else { return }
         self.settings = settings
-        timeline = AudioTimeline(originHostTime: mach_absolute_time(), clock: HostClock.current)
+
+        // The clock belongs to the listening session, not to this graph.
+        //
+        // A rebuild used to take a fresh origin, so audio that had been at
+        // thirty seconds came back at zero while the transcriber was still
+        // holding the earlier part — "Audio input timestamp overlaps or
+        // precedes prior audio input", every time a device changed.
+        let origin = sessionOrigin ?? mach_absolute_time()
+        sessionOrigin = origin
+        timeline = AudioTimeline(originHostTime: origin, clock: HostClock.current)
 
         if settings.captureMicrophone {
             do {
@@ -62,6 +74,7 @@ final class CallCapture {
                     preferredUID: preferredInputUID,
                     available: AudioDevices.inputs()
                 )
+                microphone?.onDegraded = { [weak self] message in self?.report(message) }
                 try microphone?.start(
                     echoCancellation: settings.echoCancellationEnabled,
                     device: chosen
@@ -89,10 +102,19 @@ final class CallCapture {
         observeDeviceChanges()
         startPump()
         isRunning = true
+        // What the devices looked like when this graph came up. Anything that
+        // arrives before it settles, or that leaves this unchanged, is noise.
+        restartState.started(
+            at: Date().timeIntervalSinceReferenceDate,
+            fingerprint: AudioDevices.fingerprint()
+        )
         SessionLog.shared.write("capture", "started mic=\(settings.captureMicrophone) tap=\(tap != nil)")
     }
 
-    func stop() {
+    /// - Parameter endingSession: false while rebuilding, which must keep the
+    ///   clock it has been handing to the transcribers.
+    func stop(endingSession: Bool = true) {
+        if endingSession { sessionOrigin = nil }
         guard isRunning || pump != nil else { return }
         pump?.cancel()
         pump = nil
@@ -163,9 +185,10 @@ final class CallCapture {
             }
         }
 
-        // Audio arriving is the only proof a rebuild worked.
+        // Audio arriving is the only proof a rebuild worked — and it has to
+        // keep arriving. A trickle between two failures is not a recovery.
         if levels.me > 0 || levels.them > 0 {
-            restartPolicy.succeeded(state: &restartState)
+            restartPolicy.succeeded(at: Date().timeIntervalSinceReferenceDate, state: &restartState)
         }
         DispatchQueue.main.async { [weak self] in self?.onLevels?(levels) }
     }
@@ -236,7 +259,15 @@ final class CallCapture {
         guard isRunning else { return }
         let now = Date().timeIntervalSinceReferenceDate
 
-        switch restartPolicy.requestRebuild(at: now, state: &restartState) {
+        switch restartPolicy.requestRebuild(
+            at: now,
+            fingerprint: AudioDevices.fingerprint(),
+            state: &restartState
+        ) {
+        case .ignore(let why):
+            // Not worth a line each time; this fires in bursts.
+            _ = why
+
         case .wait(let remaining):
             DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
                 self?.deviceChanged()
@@ -247,7 +278,7 @@ final class CallCapture {
         case .rebuild:
             SessionLog.shared.write("capture", "device changed, rebuilding")
             let current = settings
-            stop()
+            stop(endingSession: false)
             start(settings: current)
             // Deliberately not marking success here. Audio is not flowing yet,
             // and clearing the counter now would let a device that keeps

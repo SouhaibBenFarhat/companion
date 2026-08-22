@@ -1,0 +1,144 @@
+/* ---------------------------------------------------------------------------
+   Base rules — the only place :hover, :active, :focus and :disabled are
+   styled. A component never writes them, so they cannot drift apart.
+--------------------------------------------------------------------------- */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* Transparent: the blurred material lives in AppKit behind the web view.
+     Tinting here as well would stack two layers and defeat it. */
+  background: transparent;
+  color: var(--c-ink);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: var(--text-md);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  /* The window is borderless; the rounded corner lives here. */
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Anything that can be pressed. Marked by the kit, never by a view.
+
+   Hover and active are computed from whatever surface the element sits on,
+   so they cannot collide with it — which is what made a menu row's hover
+   invisible when the hover token and the menu happened to match. */
+[data-pressable] {
+  cursor: pointer;
+  transition:
+    background-color var(--dur-state) ease,
+    color var(--dur-state) ease,
+    border-color var(--dur-state) ease;
+}
+
+[data-pressable]:hover:not(:disabled):not([data-pressed='true']) {
+  background-color: oklch(from var(--surface) calc(l + var(--state-step)) c h);
+}
+
+[data-pressable]:active:not(:disabled) {
+  background-color: oklch(from var(--surface) calc(l + var(--state-step-strong)) c h);
+}
+
+/* Keyboard only for a button. A mouse press should not leave a ring behind. */
+[data-pressable]:focus-visible {
+  outline: var(--focus-w) solid var(--c-accent);
+  outline-offset: var(--focus-off);
+}
+
+/* A text field rings whenever it holds focus, mouse or keyboard — you have to
+   be able to see where typing goes. */
+[data-field]:focus {
+  outline: var(--focus-w) solid var(--c-accent);
+  outline-offset: var(--focus-off);
+}
+
+/* A well is a field and its toolbar in one box. Its own border carries the
+   focus: an outline around something 90 points tall reads as an error, and
+   ringing the well AND the field inside it drew two. */
+[data-well]:focus-within {
+  border-color: var(--c-accent);
+}
+
+/* Disabled is a colour, not an opacity. Fading the whole element also fades
+   its background, which on a translucent panel lets the desktop through. */
+[data-pressable]:disabled,
+[data-field]:disabled,
+/* The composer's field carries no data-field — the well rings for it — so it
+   is named directly. It also has to outrank `.selectable` further down, which
+   is unlayered and sets `cursor: auto`; an element selector plus a pseudo-class
+   does that on specificity, whatever the order. */
+textarea:disabled {
+  cursor: not-allowed;
+  color: var(--c-faint);
+}
+
+/* Every surface declares what it is, so its children can derive their states
+   from it without being told. */
+[data-surface='well'] { --surface: var(--s-1); background-color: var(--c-well); }
+[data-surface='chrome'] { --surface: var(--s-3); background-color: var(--c-chrome); }
+[data-surface='control'] { --surface: var(--s-4); background-color: var(--c-control); }
+[data-surface='card'] { --surface: var(--s-5); background-color: var(--c-card); }
+[data-surface='overlay'] { --surface: var(--s-6); background-color: var(--c-overlay); }
+[data-surface='input'] { --surface: var(--s-0); background-color: var(--c-input); }
+[data-surface='code'] { --surface: var(--s-2); background-color: var(--c-code); }
+
+/* A hairline. Ink at low alpha rather than a step away from the surface: every
+   surface in this app is translucent, so the colour actually on screen is the
+   token composited over the blurred desktop, and a solid line derived from the
+   token lands on a colour that is not there. */
+[data-divider] {
+  height: 1px;
+  background-color: var(--c-divider);
+}
+
+/* The composer's toolbar sits inside the input well but is raised above it.
+   Stepping its hover from --s-0, the darkest light surface, put muted text at
+   APCA Lc 56.6 against a floor of 60. A raised control steps from the chrome
+   behind the composer, not from the hole it sits in. */
+/* :where() so this counts for nothing. It is a default for the plain controls
+   in the toolbar; a filled button that declares its own --surface — Send —
+   must keep it, or its hover steps from the chrome and the purple turns grey
+   under the pointer. */
+:where([data-surface='input'] [data-pressable]) {
+  --surface: var(--s-3);
+}
+
+/* The panel floor, so a control that is not inside any surface still has one
+   to derive from. */
+:root {
+  --surface: var(--s-1);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(from var(--c-muted) l c h / 0.32);
+  border-radius: var(--radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(from var(--c-muted) l c h / 0.52);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Only the conversation is selectable — you copy answers, not chrome. */
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: auto;
+}

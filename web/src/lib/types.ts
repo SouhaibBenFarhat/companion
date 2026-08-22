@@ -37,6 +37,10 @@ export interface SettingsPayload {
   hideFromScreenShare: boolean
   /** The chosen microphone is not plugged in right now. */
   microphoneMissing: boolean
+  /** 'system', 'light' or 'dark'. */
+  theme: string
+  /** 'whisper' or 'apple'. */
+  transcriptionEngine: string
 }
 
 export type PermissionId = 'microphone' | 'systemAudio' | 'accessibility'
@@ -49,6 +53,8 @@ export interface PermissionItem {
   state: PermissionState
   /** Granting these while the app runs does not take effect until it restarts. */
   needsRestart: boolean
+  /** Clears a stale entry so macOS asks again. The user runs it, not the app. */
+  resetCommand: string
 }
 
 export interface Permissions {
@@ -100,6 +106,8 @@ export interface StatePayload {
   repository: string
   permissions: Permissions
   inputDevices: InputDevice[]
+  /** False means no folder was chosen and the agent is running in $HOME. */
+  hasRepository: boolean
   listening: ListeningState
   currentId: string
   conversations: ConversationSummary[]
@@ -133,12 +141,15 @@ export type Outgoing =
   | { type: 'deleteConversation'; id: string }
   | { type: 'pickRepository' }
   | { type: 'signIn' }
+  | { type: 'openLink'; url: string }
   | { type: 'requestPermission'; id: PermissionId }
   | { type: 'openPermissionSettings'; id: PermissionId }
   | { type: 'refreshPermissions' }
+  | { type: 'relaunch' }
   | { type: 'toggleListening' }
   | { type: 'lookAtScreen' }
   | { type: 'drag'; dx: number; dy: number }
+  | { type: 'dragEnd' }
   | {
       type: 'updateSettings'
       agent?: string
@@ -148,4 +159,7 @@ export type Outgoing =
       suggestionsEnabled?: boolean
       microphoneDeviceUID?: string
       hideFromScreenShare?: boolean
+      theme?: string
+      transcriptionEngine?: string
+      persistTranscript?: boolean
     }

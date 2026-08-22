@@ -87,22 +87,59 @@ final class AgentCommandTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--system-prompt"))
     }
 
-    func testClaudeReadOnlyBlocksTheWriteTools() {
+    /// Read only is a list of the tools it HAS, not of the ones it may not
+    /// use. Denying `Edit` and `Write` left `Bash` in place, and `echo > file`
+    /// writes just as well — a panel set to Read only created a file in the
+    /// user's home folder.
+    func testClaudeReadOnlyHandsOverOnlyTheReadingTools() throws {
         let arguments = build(permission: .readOnly).arguments
-        let index = arguments.firstIndex(of: "--disallowedTools")
-        XCTAssertNotNil(index)
-        XCTAssertEqual(arguments[index! + 1], "Edit,Write,NotebookEdit")
+        let index = try XCTUnwrap(arguments.firstIndex(of: "--tools"))
+        let tools = arguments[index + 1].split(separator: ",").map(String.init)
+
+        XCTAssertEqual(tools, AgentCommandBuilder.readOnlyTools)
+        for forbidden in ["Bash", "Edit", "Write", "NotebookEdit"] {
+            XCTAssertFalse(tools.contains(forbidden), "\(forbidden) can change the machine")
+        }
+        XCTAssertTrue(tools.contains("Read"))
     }
 
-    func testClaudeAcceptEditsDoesNotBlockTools() {
+    /// Headless, an approval prompt reaches nobody and the run stops with the
+    /// panel showing an assistant asking the user to confirm something in a
+    /// window that does not exist. `acceptEdits` accepts file edits and still
+    /// asks before running a command, so it is not enough on its own.
+    func testClaudeCanEditNeverStopsToAsk() throws {
         let arguments = build(permission: .acceptEdits).arguments
-        XCTAssertFalse(arguments.contains("--disallowedTools"))
-        let index = arguments.firstIndex(of: "--permission-mode")
-        XCTAssertNotNil(index)
-        XCTAssertEqual(arguments[index! + 1], "acceptEdits")
+        let index = try XCTUnwrap(arguments.firstIndex(of: "--permission-mode"))
+        XCTAssertEqual(arguments[index + 1], "bypassPermissions")
+        XCTAssertFalse(arguments.contains("--tools"), "the armed mode holds nothing back")
+    }
+
+    /// Neither mode may ever produce a question.
+    func testNoModeCanRaiseAPromptWithNowhereToGo() {
+        for permission in AgentPermission.allCases {
+            let arguments = build(permission: permission).arguments
+            XCTAssertFalse(arguments.contains("default"), "\(permission) would prompt")
+            if permission == .readOnly {
+                XCTAssertTrue(arguments.contains("--tools"))
+            } else {
+                XCTAssertTrue(arguments.contains("bypassPermissions"))
+            }
+        }
     }
 
     // MARK: - Codex
+
+    func testCodexCanEditNeverStopsToAsk() {
+        let arguments = build(kind: .codex, permission: .acceptEdits).arguments
+        XCTAssertTrue(arguments.contains("--dangerously-bypass-approvals-and-sandbox"))
+    }
+
+    func testCodexReadOnlyStaysSandboxed() {
+        let arguments = build(kind: .codex, permission: .readOnly).arguments
+        let index = arguments.firstIndex(of: "--sandbox")
+        XCTAssertEqual(arguments[index! + 1], "read-only")
+        XCTAssertFalse(arguments.contains("--dangerously-bypass-approvals-and-sandbox"))
+    }
 
     func testCodexRunsExecWithJSONOutput() {
         let arguments = build(kind: .codex).arguments

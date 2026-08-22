@@ -57,10 +57,16 @@ final class PanelController: NSObject {
         webView = WKWebView(frame: .zero, configuration: configuration)
 
         let size = CGSize(width: settings.panelWidth, height: settings.panelHeight)
-        let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let saved = settings.panelOriginX.flatMap { x in
             settings.panelOriginY.map { CGRect(x: x, y: $0, width: size.width, height: size.height) }
         }
+        // The display the panel was last on, not the one holding the key
+        // window. `NSScreen.main` is the latter, and this app is never
+        // frontmost, so on two displays it was routinely the wrong answer —
+        // which is how a laptop-sized panel came back sized for a monitor.
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        let fallback = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let visible = saved.flatMap { PanelPlacement.target(for: $0, among: screens) } ?? fallback
         let frame = saved.map { PanelPlacement.clamp(frame: $0, into: visible) }
             ?? PanelPlacement.defaultFrame(size: size, in: visible)
 
@@ -96,7 +102,25 @@ final class PanelController: NSObject {
         panel.contentView = backdrop
         backdrop.addSubview(webView)
         panel.delegate = self
+
+        // Unplugging a monitor, changing resolution, or switching a display's
+        // arrangement all arrive here. Without it the panel keeps a geometry
+        // that no longer exists anywhere.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitToScreen() }
+        }
         panel.isHiddenFromScreenShare = settings.hideFromScreenShare
+        applyAppearance()
+
+        // At launch, because that is the only moment Accessibility and Screen
+        // Recording are read. If a grant is not visible here it is not visible
+        // at all until the next start, and the log is the only place that fact
+        // is recorded.
+        PermissionChecker.log("launched")
 
         awareness.updateRepository(settings.repositoryURL())
         awareness.preferredInputUID = settings.microphoneDeviceUID
@@ -159,6 +183,50 @@ final class PanelController: NSObject {
         return image
     }
 
+    // MARK: - Appearance
+
+    /// Light, dark, or whatever macOS is doing.
+    ///
+    /// Set on the window, not on the page. The panel is a blurred AppKit
+    /// material with a web view on top: the window's appearance drives that
+    /// material AND the `prefers-color-scheme` the page reads, so the two
+    /// cannot disagree. Styling the page alone would leave a light blur behind
+    /// dark content.
+    private func applyAppearance() {
+        switch settings.theme {
+        case .system: panel.appearance = nil
+        case .light: panel.appearance = NSAppearance(named: .aqua)
+        case .dark: panel.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+
+    // MARK: - Staying on screen
+
+    /// The screen the panel is actually on.
+    ///
+    /// Not `NSScreen.main`: that is the screen holding the key window, and this
+    /// app is deliberately never frontmost, so on a two-display setup it is
+    /// routinely the wrong one.
+    private var visibleFrame: CGRect? {
+        (panel.screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+    }
+
+    /// Pulls the panel back inside its display, shrinking it if it no longer
+    /// fits.
+    ///
+    /// A panel wider or taller than the screen is not merely untidy: its edges
+    /// and its drag strip are off the display, so it cannot be resized and it
+    /// cannot be moved. The only way out was to delete the settings file.
+    /// Carrying a size from a large monitor to a laptop screen did exactly
+    /// that.
+    func fitToScreen(display: Bool = true) {
+        guard let visible = visibleFrame else { return }
+        let fitted = PanelPlacement.clamp(frame: panel.frame, into: visible)
+        guard fitted != panel.frame else { return }
+        panel.setFrame(fitted, display: display)
+        rememberFrame()
+    }
+
     // MARK: - Showing and hiding
 
     var isVisible: Bool { panel.isVisible }
@@ -166,8 +234,7 @@ final class PanelController: NSObject {
     func toggle() { isVisible ? hide() : show() }
 
     func show() {
-        let visible = NSScreen.main?.visibleFrame ?? panel.frame
-        panel.setFrame(PanelPlacement.clamp(frame: panel.frame, into: visible), display: false)
+        fitToScreen(display: false)
         // Key, but never activating: the app you are presenting stays frontmost
         // while your typing comes here.
         panel.makeKeyAndOrderFront(nil)
@@ -243,6 +310,7 @@ final class PanelController: NSObject {
 
     func startListening() {
         let permissions = PermissionChecker.report()
+        PermissionChecker.log("listen requested")
         guard permissions.canListen else {
             send(["type": "captureError", "message": permissions.summary])
             showSettingsTab()
@@ -251,6 +319,7 @@ final class PanelController: NSObject {
 
         settings.awareness.enabled = true
         persistSettings()
+        awareness.engineKind = settings.transcriptionEngine
         awareness.start(settings: settings.awareness)
     }
 
@@ -274,7 +343,22 @@ final class PanelController: NSObject {
         let spoken = awareness.transcript.text(lastSeconds: 120)
         let screen = awareness.screenContext?.summary ?? ""
         let prompt = AwarenessPrompt.build(
-            question: "The last thing said was: \"\(line)\"",
+            // An instruction, not a line of dialogue.
+            //
+            // This used to hand over only the last thing said, in quotes, on
+            // top of a transcript. The model read that as a script to continue
+            // and wrote the next turn of the conversation — "Human: what's the
+            // name of the platform he is describing?" — a question addressed to
+            // nobody, in a voice that was not its own.
+            question: """
+                Decide whether to say something to the user right now. \
+                The last thing said on the call was: "\(line)"
+
+                Answer with the thing the user should know, in one sentence, \
+                addressed to them. If there is nothing worth interrupting for, \
+                answer with nothing at all. Never continue the conversation, \
+                never write a line of dialogue, and never label a speaker.
+                """,
             conversation: spoken,
             screen: screen
         )
@@ -285,7 +369,12 @@ final class PanelController: NSObject {
             prompt: prompt,
             workingDirectory: settings.repositoryURL(),
             sessionID: nil,
-            systemPrompt: AwarenessPrompt.watchingInstruction,
+            systemPrompt: AgentContext.systemPrompt(
+                repository: settings.repositoryURL(),
+                hasRepository: settings.hasRepository,
+                isListening: true,
+                watching: AwarenessPrompt.watchingInstruction
+            ),
             permission: .readOnly
         )
 
@@ -396,6 +485,9 @@ final class PanelController: NSObject {
                 "persistTranscript": settings.awareness.persistTranscript,
                 "microphoneDeviceUID": settings.microphoneDeviceUID,
                 "hideFromScreenShare": settings.hideFromScreenShare,
+                "theme": settings.theme.rawValue,
+                "transcriptionEngine": settings.transcriptionEngine.rawValue,
+                "hasRepository": settings.hasRepository,
                 "microphoneMissing": AudioInputSelection.isPreferredMissing(
                     preferredUID: settings.microphoneDeviceUID,
                     available: AudioDevices.inputs()
@@ -426,6 +518,9 @@ final class PanelController: NSObject {
                         "reason": permission.reason,
                         "state": permissions.state(of: permission).rawValue,
                         "needsRestart": permission.needsRestartAfterGranting,
+                        "resetCommand": permission.resetCommand(
+                            bundleIdentifier: Bundle.main.bundleIdentifier ?? ""
+                        ),
                     ]
                 },
             ],
@@ -487,7 +582,13 @@ final class PanelController: NSObject {
             prompt: prompt,
             workingDirectory: settings.repositoryURL(),
             sessionID: current.agentSessionID,
-            systemPrompt: settings.systemPrompt,
+            systemPrompt: AgentContext.systemPrompt(
+                repository: settings.repositoryURL(),
+                hasRepository: settings.hasRepository,
+                isListening: isListening,
+                watching: isListening ? AwarenessPrompt.watchingInstruction : "",
+                extra: settings.systemPrompt
+            ),
             permission: settings.permission
         )
 
@@ -617,6 +718,12 @@ extension PanelController: WKScriptMessageHandler {
             panel.setFrameOrigin(moved.origin)
             rememberFrame()
 
+        case "dragEnd":
+            // Only once the pointer is up. Clamping on every step would pin the
+            // panel to the display it started on, and you could never drag it
+            // to another one.
+            fitToScreen()
+
         case "newConversation":
             runner.cancel()
             current = Conversation(repositoryPath: settings.repositoryURL().path, agent: settings.agent)
@@ -653,10 +760,31 @@ extension PanelController: WKScriptMessageHandler {
         case "lookAtScreen":
             captureScreen()
 
+        case "relaunch":
+            // Accessibility and Screen Recording are read once, at launch. A
+            // grant made while the app is running reaches nothing, and no
+            // amount of checking again will pick it up — so the panel offers
+            // the only thing that works instead of describing it.
+            let url = Bundle.main.bundleURL
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            SessionLog.shared.write("panel", "relaunching for permissions")
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
+                DispatchQueue.main.async { NSApp.terminate(nil) }
+            }
+
         case "refreshPermissions":
             // Cheap, and the only way to notice a grant made in System Settings
             // while the panel was open.
+            PermissionChecker.log("checked again")
             sendState()
+
+        case "openLink":
+            // A link in an answer must not navigate the panel. There is no
+            // address bar and no back button here, so following one inside the
+            // web view loses the conversation with no way back.
+            guard let raw = body["url"] as? String, let url = ExternalLink.url(from: raw) else { return }
+            NSWorkspace.shared.open(url)
 
         case "signIn":
             SignIn.openTerminal(
@@ -684,6 +812,17 @@ extension PanelController: WKScriptMessageHandler {
                 }
             }
 
+            if let value = body["persistTranscript"] as? Bool {
+                settings.awareness.persistTranscript = value
+            }
+            if let raw = body["transcriptionEngine"] as? String,
+               let engine = TranscriptionEngineKind(rawValue: raw) {
+                settings.transcriptionEngine = engine
+            }
+            if let raw = body["theme"] as? String, let theme = Appearance(rawValue: raw), theme != settings.theme {
+                settings.theme = theme
+                applyAppearance()
+            }
             if let value = body["hideFromScreenShare"] as? Bool, value != settings.hideFromScreenShare {
                 settings.hideFromScreenShare = value
                 panel.isHiddenFromScreenShare = value

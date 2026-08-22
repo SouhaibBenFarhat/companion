@@ -80,4 +80,29 @@ final class SettingsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Settings().panelWidth, 360)
         XCTAssertGreaterThanOrEqual(Settings().panelHeight, 400)
     }
+
+    // MARK: - Appearance
+
+    /// Following macOS is the only default that is never wrong on a machine you
+    /// have not seen.
+    func testFollowsTheSystemAppearanceByDefault() {
+        XCTAssertEqual(Settings().theme, .system)
+    }
+
+    func testThemeRoundTripsThroughJSON() throws {
+        var settings = Settings()
+        settings.theme = .dark
+        let restored = try decoder.decode(Settings.self, from: encoder.encode(settings))
+        XCTAssertEqual(restored.theme, .dark)
+    }
+
+    func testAnOlderFileFollowsTheSystem() throws {
+        let settings = try decoder.decode(Settings.self, from: Data(#"{"agent":"claude"}"#.utf8))
+        XCTAssertEqual(settings.theme, .system)
+    }
+
+    /// A hand-edited or future value must not stop the app launching.
+    func testAnUnknownThemeIsRejectedRatherThanCrashing() {
+        XCTAssertNil(Appearance(rawValue: "sepia"))
+    }
 }

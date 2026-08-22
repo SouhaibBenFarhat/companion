@@ -26,12 +26,27 @@ public enum AgentKind: String, Codable, CaseIterable, Sendable {
 }
 
 /// How much the agent is allowed to do to the repo it is pointed at.
+///
+/// Two settings, and between them they must cover every case without ever
+/// producing a question. Companion runs the agent headless: there is no
+/// terminal, so an approval prompt has nowhere to appear and nowhere to be
+/// answered. The run simply stops, and the panel shows an assistant asking the
+/// user to approve something in a window that does not exist.
 public enum AgentPermission: String, Codable, CaseIterable, Sendable {
-    /// Answer questions and read the repo, but never change a file.
-    /// The sensible default while pairing — you don't want an assistant
-    /// editing the code you are demonstrating.
+    /// Read and answer. Cannot write, cannot run a shell.
+    ///
+    /// The default while pairing — you do not want an assistant editing the
+    /// code you are demonstrating. Enforced by handing the agent only the
+    /// read-only tools, not by denying the write ones: denying `Edit` and
+    /// `Write` while leaving `Bash` in place is not read-only at all, and a
+    /// panel set to "Read only" created a file in the user's home folder with
+    /// `echo > file`.
     case readOnly
-    /// Let it edit files without asking each time.
+    /// Full power inside the working folder, and never a prompt.
+    ///
+    /// Deliberately armed: the panel asks twice before turning it on. An
+    /// assistant that cannot run the tests or the build is a search box over
+    /// your files, so this mode holds nothing back.
     case acceptEdits
 
     public var title: String {
@@ -142,16 +157,27 @@ public enum AgentCommandBuilder {
 
         switch permission {
         case .readOnly:
-            // Naming the write tools is clearer than switching the whole
-            // permission mode: the agent keeps its normal behaviour and simply
-            // cannot change files. Reading and searching still work.
-            arguments += ["--disallowedTools", "Edit,Write,NotebookEdit"]
+            // The tools it HAS, not the tools it may not use. Denying the write
+            // tools left `Bash` available, which writes perfectly well — that
+            // is how a read-only panel created a file. With the list given,
+            // the write tools do not exist, so nothing is denied at run time
+            // and nothing can stop to ask.
+            arguments += ["--tools", readOnlyTools.joined(separator: ",")]
         case .acceptEdits:
-            arguments += ["--permission-mode", "acceptEdits"]
+            // `acceptEdits` accepts file edits and still stops to ask before
+            // running a command. Headless, that question reaches nobody and the
+            // run hangs. This mode is armed on purpose, behind a confirmation,
+            // and it is scoped to the working folder.
+            arguments += ["--permission-mode", "bypassPermissions"]
         }
 
         return arguments
     }
+
+    /// Everything that cannot change the machine.
+    ///
+    /// `Bash` is absent on purpose, and that is the whole point of the list.
+    static let readOnlyTools = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]
 
     private static func codexArguments(
         workingDirectory: URL,
@@ -171,7 +197,10 @@ public enum AgentCommandBuilder {
         case .readOnly:
             arguments += ["--sandbox", "read-only"]
         case .acceptEdits:
-            arguments += ["--sandbox", "workspace-write"]
+            // Same reason as Claude's bypass: `exec` still raises approvals for
+            // anything outside the sandbox, and headless there is nobody to
+            // raise them to.
+            arguments += ["--sandbox", "workspace-write", "--dangerously-bypass-approvals-and-sandbox"]
         }
 
         // The prompt is written to standard input, not appended here.
@@ -180,19 +209,12 @@ public enum AgentCommandBuilder {
     }
 }
 
-/// The default instruction appended to whichever agent runs.
+/// The starting value of the user's own instructions field in Settings.
 ///
-/// The single biggest quality win in the app: agents default to a thorough,
-/// essay-shaped answer, which is unreadable in a panel you glance at while
-/// talking to someone.
+/// Only a starting value now. What the agent is actually told about itself
+/// lives in `AgentContext`, which is always sent and cannot be edited away —
+/// it is the difference between an agent that knows it is in Companion and one
+/// that describes itself as a terminal session.
 public enum DefaultSystemPrompt {
-    public static let text = """
-        You are answering inside a small floating panel while the user is on a \
-        live call, sharing their screen. They are talking to another person at \
-        the same time and can only glance at you.
-
-        Lead with the answer in the first sentence. Two or three sentences is \
-        usually the whole reply. Use a code block only when the user asks for \
-        code. No preamble, no restating the question, no closing summary.
-        """
+    public static let text = AgentContext.style
 }

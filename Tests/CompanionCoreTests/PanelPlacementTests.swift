@@ -75,4 +75,67 @@ final class PanelPlacementTests: XCTestCase {
         let frame = PanelPlacement.defaultFrame(size: CGSize(width: 4000, height: 4000), in: screen)
         XCTAssertTrue(screen.contains(frame))
     }
+
+    // MARK: - Carried from a large display to a small one
+
+    /// The reported bug. A panel sized on a 6K monitor, reopened on a laptop:
+    /// wider and taller than the screen, so its edges and its drag strip were
+    /// both off the display. It could not be resized and it could not be moved.
+    func testShrinksAPanelCarriedFromALargerDisplay() {
+        let laptop = CGRect(x: 0, y: 0, width: 1512, height: 895)
+        let oversized = CGRect(x: 40, y: -300, width: 2200, height: 1400)
+
+        let clamped = PanelPlacement.clamp(frame: oversized, into: laptop)
+
+        XCTAssertLessThanOrEqual(clamped.width, laptop.width)
+        XCTAssertLessThanOrEqual(clamped.height, laptop.height)
+        XCTAssertTrue(laptop.contains(clamped), "the whole panel has to be reachable")
+    }
+
+    /// Every edge has to be inside the screen, or that edge cannot be dragged
+    /// to resize the window.
+    func testEveryEdgeStaysGrabbable() {
+        let laptop = CGRect(x: 0, y: 0, width: 1512, height: 895)
+        for frame in [
+            CGRect(x: -900, y: -900, width: 3000, height: 2000),
+            CGRect(x: 1400, y: 800, width: 800, height: 900),
+            CGRect(x: 0, y: 0, width: 1512, height: 895),
+        ] {
+            let clamped = PanelPlacement.clamp(frame: frame, into: laptop)
+            XCTAssertGreaterThanOrEqual(clamped.minX, laptop.minX, "\(frame)")
+            XCTAssertGreaterThanOrEqual(clamped.minY, laptop.minY, "\(frame)")
+            XCTAssertLessThanOrEqual(clamped.maxX, laptop.maxX, "\(frame)")
+            XCTAssertLessThanOrEqual(clamped.maxY, laptop.maxY, "\(frame)")
+        }
+    }
+
+    // MARK: - Choosing the display
+
+    private let left = CGRect(x: 0, y: 0, width: 1512, height: 895)
+    private let right = CGRect(x: 1512, y: 0, width: 2560, height: 1440)
+
+    func testPicksTheDisplayThePanelSitsOn() {
+        let onTheRight = CGRect(x: 2000, y: 300, width: 460, height: 560)
+        XCTAssertEqual(PanelPlacement.target(for: onTheRight, among: [left, right]), right)
+    }
+
+    /// Straddling two displays goes to whichever holds more of the panel, the
+    /// same rule AppKit uses.
+    func testPicksTheDisplayHoldingMostOfThePanel() {
+        let mostlyLeft = CGRect(x: 1200, y: 300, width: 400, height: 560)
+        XCTAssertEqual(PanelPlacement.target(for: mostlyLeft, among: [left, right]), left)
+
+        let mostlyRight = CGRect(x: 1450, y: 300, width: 400, height: 560)
+        XCTAssertEqual(PanelPlacement.target(for: mostlyRight, among: [left, right]), right)
+    }
+
+    /// The monitor it was saved on has been unplugged, so it overlaps nothing.
+    func testFallsBackWhenTheSavedDisplayIsGone() {
+        let ghost = CGRect(x: 4000, y: 2000, width: 460, height: 560)
+        XCTAssertEqual(PanelPlacement.target(for: ghost, among: [left]), left)
+    }
+
+    func testTargetIsNilWithNoDisplays() {
+        XCTAssertNil(PanelPlacement.target(for: .zero, among: []))
+    }
 }
