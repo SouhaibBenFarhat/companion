@@ -67,6 +67,9 @@ public struct Settings: Codable, Equatable, Sendable {
     public var hotKeyCode: UInt32
     public var hotKeyModifiers: UInt32
 
+    /// Which recogniser turns speech into text.
+    public var transcriptionEngine: TranscriptionEngineKind
+
     /// Light, dark, or whatever macOS is doing.
     public var theme: Appearance
 
@@ -88,6 +91,7 @@ public struct Settings: Codable, Equatable, Sendable {
         hideFromScreenShare: Bool = true,
         hotKeyCode: UInt32 = 49, // Space
         hotKeyModifiers: UInt32 = 2048, // Option
+        transcriptionEngine: TranscriptionEngineKind = .whisper,
         theme: Appearance = .system,
         awareness: AwarenessSettings = AwarenessSettings()
     ) {
@@ -105,6 +109,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.hideFromScreenShare = hideFromScreenShare
         self.hotKeyCode = hotKeyCode
         self.hotKeyModifiers = hotKeyModifiers
+        self.transcriptionEngine = transcriptionEngine
         self.theme = theme
         self.awareness = awareness
     }
@@ -131,6 +136,9 @@ public struct Settings: Codable, Equatable, Sendable {
         hotKeyCode = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyCode) ?? defaults.hotKeyCode
         hotKeyModifiers = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyModifiers)
             ?? defaults.hotKeyModifiers
+        transcriptionEngine = try container.decodeIfPresent(
+            TranscriptionEngineKind.self, forKey: .transcriptionEngine
+        ) ?? defaults.transcriptionEngine
         theme = try container.decodeIfPresent(Appearance.self, forKey: .theme) ?? defaults.theme
         awareness = try container.decodeIfPresent(AwarenessSettings.self, forKey: .awareness)
             ?? defaults.awareness

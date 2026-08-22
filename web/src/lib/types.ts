@@ -39,6 +39,8 @@ export interface SettingsPayload {
   microphoneMissing: boolean
   /** 'system', 'light' or 'dark'. */
   theme: string
+  /** 'whisper' or 'apple'. */
+  transcriptionEngine: string
 }
 
 export type PermissionId = 'microphone' | 'systemAudio' | 'accessibility'
@@ -158,4 +160,5 @@ export type Outgoing =
       microphoneDeviceUID?: string
       hideFromScreenShare?: boolean
       theme?: string
+      transcriptionEngine?: string
     }

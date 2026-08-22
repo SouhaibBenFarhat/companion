@@ -9,7 +9,9 @@ import Foundation
 /// transcript. Everything above this sees text; everything below it sees audio.
 final class AwarenessCoordinator {
     private let capture = CallCapture()
-    private var transcribers: [CaptureSpeaker: AnyObject] = [:]
+    /// One recogniser per speaker. Typed by the protocol, so the downcasts
+    /// and the `#available` blocks that used to be needed here are gone.
+    private var engines: [CaptureSpeaker: TranscriptionEngine] = [:]
     private(set) var transcript = TranscriptBuffer()
     private var screen: ScreenAwareness?
     private(set) var screenContext: ScreenContext?
@@ -36,6 +38,9 @@ final class AwarenessCoordinator {
     /// When the user turned listening on, so each stream can say how far into
     /// the session it began.
     private var listeningStartedAt = Date.distantPast.timeIntervalSinceReferenceDate
+
+    /// Which recogniser to build. Set from Settings before listening starts.
+    var engineKind: TranscriptionEngineKind = .whisper
 
     init() {
         capture.onError = { [weak self] message in self?.onError?(message) }
@@ -85,37 +90,37 @@ final class AwarenessCoordinator {
         watcher.start()
         screen = watcher
 
-        if #available(macOS 26.0, *) {
-            for speaker in CaptureSpeaker.allCases {
-                let transcriber = Transcriber(speaker: speaker)
-                transcriber.onFinal = { [weak self] text, start in
-                    guard let self else { return }
-                    self.transcript.appendFinal(text, speaker: speaker, at: start)
-                    self.publish()
+        for speaker in CaptureSpeaker.allCases {
+            guard let engine = makeEngine(for: speaker, settings: settings) else { continue }
 
-                    // No timer. A settled line from the other person is a real
-                    // event, and it is the only kind worth thinking about.
-                    if let reason = self.trigger.evaluate(
-                        text: text,
-                        speaker: speaker,
-                        userIsSpeaking: self.userIsSpeaking
-                    ) {
-                        self.onTrigger?(reason, text)
-                    }
-                }
-                transcriber.onVolatile = { [weak self] text, start in
-                    self?.transcript.setVolatile(text, speaker: speaker, at: start)
-                    self?.publish()
-                }
-                transcriber.onError = { [weak self] message in self?.onError?(message) }
-                transcribers[speaker] = transcriber
+            engine.onFinal = { [weak self] text, start in
+                guard let self else { return }
+                self.transcript.appendFinal(text, speaker: speaker, at: start)
+                self.publish()
 
-                // Where in the session this stream begins. The analyzer counts
-                // from zero for each one, so without this the second speaker's
-                // first word sorts against the first speaker's first word.
-                transcriber.sessionOffset = max(0, Date().timeIntervalSinceReferenceDate - listeningStartedAt)
-                Task { await transcriber.start() }
+                // No timer. A settled line from the other person is a real
+                // event, and it is the only kind worth thinking about.
+                if let reason = self.trigger.evaluate(
+                    text: text,
+                    speaker: speaker,
+                    userIsSpeaking: self.userIsSpeaking
+                ) {
+                    self.onTrigger?(reason, text)
+                }
             }
+            engine.onVolatile = { [weak self] text, start in
+                self?.transcript.setVolatile(text, speaker: speaker, at: start)
+                self?.publish()
+            }
+            engine.onError = { [weak self] message in self?.onError?(message) }
+
+            // Where in the session this stream begins. Apple's engine counts
+            // from zero for each one, so without this the second speaker's
+            // first word sorts against the first speaker's first.
+            engine.sessionOffset = max(0, Date().timeIntervalSinceReferenceDate - listeningStartedAt)
+
+            engines[speaker] = engine
+            Task { await engine.start() }
         }
 
         onStateChanged?()
@@ -127,12 +132,10 @@ final class AwarenessCoordinator {
         screen = nil
         screenContext = nil
 
-        if #available(macOS 26.0, *) {
-            for case let transcriber as Transcriber in transcribers.values {
-                Task { await transcriber.stop() }
-            }
+        for engine in engines.values {
+            Task { await engine.stop() }
         }
-        transcribers = [:]
+        engines = [:]
         onStateChanged?()
         publish()
     }
@@ -166,12 +169,36 @@ final class AwarenessCoordinator {
     // MARK: - Audio in, text out
 
     private func consume(_ chunk: PCMChunk) {
-        guard #available(macOS 26.0, *),
-              let transcriber = transcribers[chunk.speaker] as? Transcriber,
-              let buffer = Self.makeBuffer(from: chunk)
-        else { return }
+        guard let engine = engines[chunk.speaker] else { return }
+        // The one clock both streams share. Whisper needs it because it is
+        // handed detached blocks with no timeline of their own; Apple's engine
+        // ignores it and counts frames instead.
+        engine.append(chunk, at: capture.seconds(for: chunk.hostTimeNanoseconds, speaker: chunk.speaker))
+    }
 
-        transcriber.append(buffer)
+    /// Builds the recogniser the user picked, or nothing when this Mac cannot
+    /// run it.
+    private func makeEngine(
+        for speaker: CaptureSpeaker,
+        settings: AwarenessSettings
+    ) -> TranscriptionEngine? {
+        switch engineKind {
+        case .whisper:
+            return WhisperEngine(
+                speaker: speaker,
+                variant: .largeTurbo,
+                // Empty for now. The words a call is full of are known — this
+                // is where they go, worst-first, because Whisper keeps the tail
+                // of the prompt and only 111 tokens of it.
+                vocabulary: []
+            )
+        case .apple:
+            guard #available(macOS 26.0, *) else {
+                if let why = TranscriptionEngineKind.apple.unmetRequirement { onError?(why) }
+                return nil
+            }
+            return Transcriber(speaker: speaker)
+        }
     }
 
     /// Wraps a chunk in a buffer that says what it actually is.

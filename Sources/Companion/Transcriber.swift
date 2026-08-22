@@ -10,7 +10,7 @@ import Speech
 /// older recogniser, whose server route restarts every minute and cannot
 /// promise on-device.
 @available(macOS 26.0, *)
-final class Transcriber {
+final class Transcriber: TranscriptionEngine {
     let speaker: CaptureSpeaker
 
     /// Settled text, with the moment it started.
@@ -184,6 +184,41 @@ final class Transcriber {
     ///
     /// Ordering the two speakers against each other is Companion's job, and it
     /// is done with `sessionOffset` where it cannot be rejected by a framework.
+    /// The session time is deliberately ignored.
+    ///
+    /// `SpeechAnalyzer` keeps its own position by counting frames. Handing it a
+    /// wall-clock time is exactly the mistake that took six attempts to find —
+    /// see the note on the buffer overload below. Companion orders the two
+    /// speakers with `sessionOffset` instead.
+    func append(_ chunk: PCMChunk, at sessionSeconds: TimeInterval) {
+        guard let buffer = Self.makeBuffer(from: chunk) else { return }
+        append(buffer)
+    }
+
+    /// Wraps a chunk in a buffer that says what it actually is — built from the
+    /// chunk's own sample rate, never from one decided elsewhere.
+    private static func makeBuffer(from chunk: PCMChunk) -> AVAudioPCMBuffer? {
+        guard !chunk.samples.isEmpty,
+              let format = AVAudioFormat(
+                  commonFormat: .pcmFormatFloat32,
+                  sampleRate: chunk.sampleRate,
+                  channels: 1,
+                  interleaved: false
+              ),
+              let buffer = AVAudioPCMBuffer(
+                  pcmFormat: format,
+                  frameCapacity: AVAudioFrameCount(chunk.samples.count)
+              ),
+              let channel = buffer.floatChannelData?[0]
+        else { return nil }
+
+        buffer.frameLength = AVAudioFrameCount(chunk.samples.count)
+        chunk.samples.withUnsafeBufferPointer { source in
+            channel.update(from: source.baseAddress!, count: source.count)
+        }
+        return buffer
+    }
+
     func append(_ buffer: AVAudioPCMBuffer) {
         guard let continuation = inputContinuation, let required = requiredFormat else { return }
         guard let converted = convert(buffer, to: required) else { return }

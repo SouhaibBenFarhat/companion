@@ -72,6 +72,7 @@ export function SettingsSheet({
       microphoneDeviceUID: next.microphoneDeviceUID,
       hideFromScreenShare: next.hideFromScreenShare,
       theme: next.theme,
+      transcriptionEngine: next.transcriptionEngine,
     })
   }
 
@@ -169,6 +170,21 @@ export function SettingsSheet({
               </option>
             ))}
           </Select>
+        </Field>
+
+        <Field
+          label="Speech to text"
+          hint="Whisper runs a 1.6 GB model on the Neural Engine and downloads it the first time you listen. It is markedly better on identifiers and library names, which is most of what a pairing call is made of. Apple's is instant and needs no download."
+        >
+          <Segmented
+            label="Speech to text"
+            value={draft.transcriptionEngine}
+            onChange={(transcriptionEngine) => apply({ transcriptionEngine })}
+            options={[
+              { value: 'whisper', label: 'Whisper' },
+              { value: 'apple', label: 'Apple' },
+            ]}
+          />
         </Field>
 
         <Toggle

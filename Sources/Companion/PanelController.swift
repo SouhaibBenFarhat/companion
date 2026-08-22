@@ -319,6 +319,7 @@ final class PanelController: NSObject {
 
         settings.awareness.enabled = true
         persistSettings()
+        awareness.engineKind = settings.transcriptionEngine
         awareness.start(settings: settings.awareness)
     }
 
@@ -470,6 +471,7 @@ final class PanelController: NSObject {
                 "microphoneDeviceUID": settings.microphoneDeviceUID,
                 "hideFromScreenShare": settings.hideFromScreenShare,
                 "theme": settings.theme.rawValue,
+                "transcriptionEngine": settings.transcriptionEngine.rawValue,
                 "hasRepository": settings.hasRepository,
                 "microphoneMissing": AudioInputSelection.isPreferredMissing(
                     preferredUID: settings.microphoneDeviceUID,
@@ -795,6 +797,10 @@ extension PanelController: WKScriptMessageHandler {
                 }
             }
 
+            if let raw = body["transcriptionEngine"] as? String,
+               let engine = TranscriptionEngineKind(rawValue: raw) {
+                settings.transcriptionEngine = engine
+            }
             if let raw = body["theme"] as? String, let theme = Appearance(rawValue: raw), theme != settings.theme {
                 settings.theme = theme
                 applyAppearance()
