@@ -230,7 +230,23 @@ final class WhisperEngine: TranscriptionEngine {
 
         if window.isClosed {
             lastPreview = ""
-            onFinal?(text, window.startSeconds)
+
+            // One line per sentence, not one per window.
+            //
+            // A window is up to fifteen seconds, and everything in it arrives
+            // as a single string. Shown whole it lands in the panel as a wall
+            // of text with the next wall on top of it, which is not how the
+            // conversation happened. Cut into sentences, each is its own line
+            // at its own moment.
+            let sentences = SentenceSplitter.split(text)
+            let times = SentenceSplitter.times(
+                for: sentences,
+                from: window.startSeconds,
+                over: window.duration
+            )
+            for (sentence, at) in zip(sentences, times) {
+                onFinal?(sentence, at)
+            }
             return
         }
 
