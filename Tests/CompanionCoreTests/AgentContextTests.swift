@@ -105,3 +105,33 @@ final class AgentContextTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Nothing is uploaded"))
     }
 }
+
+final class SuggestionShapeTests: XCTestCase {
+    /// The panel showed "Human: what's the name of the platform he is
+    /// describing?" — the model continuing the transcript instead of speaking
+    /// to the user. The prompt has to say which of those it wants.
+    func testTheSpokenLineIsWrappedInAnInstruction() {
+        let prompt = AwarenessPrompt.build(
+            question: """
+                Decide whether to say something to the user right now. \
+                The last thing said on the call was: "we added a waveform debugger"
+
+                Answer with the thing the user should know, in one sentence, \
+                addressed to them. If there is nothing worth interrupting for, \
+                answer with nothing at all. Never continue the conversation, \
+                never write a line of dialogue, and never label a speaker.
+                """,
+            conversation: "The call: we added a waveform debugger"
+        )
+
+        XCTAssertTrue(prompt.contains("Decide whether to say something"))
+        XCTAssertTrue(prompt.contains("Never continue the conversation"))
+        XCTAssertTrue(prompt.contains("<call>"))
+    }
+
+    /// Staying quiet is the normal case and has to be stated as one.
+    func testSilenceIsAllowed() {
+        XCTAssertTrue(AwarenessPrompt.watchingInstruction.contains("stay silent"))
+        XCTAssertTrue(AwarenessPrompt.watchingInstruction.contains("it is not a failure"))
+    }
+}

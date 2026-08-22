@@ -40,6 +40,8 @@ final class WhisperEngine: TranscriptionEngine {
     /// One preview decode at a time. A second queued behind the first is stale
     /// before it starts.
     private var previewInFlight = false
+    /// The last preview, to compare the next one against.
+    private var lastPreview = ""
 
     /// Whisper wants 16 kHz mono Float32. `WhisperKit.sampleRate` is 16000, and
     /// `transcribe(audioArray:)` is documented "Array of 16khz raw float audio
@@ -203,6 +205,15 @@ final class WhisperEngine: TranscriptionEngine {
     private func report(text: String, for window: TranscriptionWindow) {
         if !window.isClosed { previewInFlight = false }
 
+        guard !TranscriptionNoise.isRepetitionLoop(text) else {
+            // Thrown away rather than shown. A loop is not a mishearing that a
+            // reader can discount; it reads as something the other person
+            // actually said, at length.
+            SessionLog.shared.write("whisper", "\(speaker) dropped a repetition loop (\(text.count) chars)")
+            if window.isClosed { onVolatile?("", window.startSeconds) }
+            return
+        }
+
         guard !TranscriptionNoise.isFiller(text) else {
             // Silence comes back as "Thank you." and a short noise as ".".
             // Both are non-empty, so `TranscriptBuffer.appendFinal`'s empty
@@ -210,15 +221,29 @@ final class WhisperEngine: TranscriptionEngine {
             // can trip the suggestion trigger into interrupting a call about
             // nothing. Clearing the tail as well removes a preview that is
             // about to have no final to replace it.
-            onVolatile?("", window.startSeconds)
+            // Only on a closed window. Clearing the preview on an open one
+            // deletes a line the reader is part-way through, and the next pass
+            // brings it straight back — which is the flicker.
+            if window.isClosed { onVolatile?("", window.startSeconds) }
             return
         }
 
         if window.isClosed {
+            lastPreview = ""
             onFinal?(text, window.startSeconds)
-        } else {
-            onVolatile?(text, window.startSeconds)
+            return
         }
+
+        // Only the words this pass and the last one agree on.
+        //
+        // Whisper re-decodes a growing window, so each preview can rewrite the
+        // whole line. Shown whole, the panel rewrites itself several times a
+        // second and text that was on screen a moment ago disappears. Shown as
+        // the agreed prefix, the line only ever grows.
+        let agreed = AgreedPrefix.of(lastPreview, text)
+        lastPreview = text
+        guard !agreed.isEmpty else { return }
+        onVolatile?(agreed, window.startSeconds)
     }
 
     @MainActor

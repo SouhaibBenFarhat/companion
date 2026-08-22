@@ -231,4 +231,32 @@ public enum TranscriptionNoise {
         if bare.isEmpty { return true }
         return filler.contains(bare)
     }
+
+    /// Whether the recogniser fell into a loop.
+    ///
+    /// Whisper's worst failure is not mishearing a word, it is repeating one:
+    /// a window it cannot make sense of comes back as "and type, and type, and
+    /// type" for a hundred words. Its own defence is the compression-ratio
+    /// check, which retries the decode at a higher temperature — and that is
+    /// switched on. This is the second line, because the first can miss, and
+    /// what it lets through does not look like a mistake to a reader. It looks
+    /// like the other person said it.
+    ///
+    /// Judged on distinct words rather than on repeated phrases: a loop always
+    /// collapses to a tiny vocabulary spread over a long line, whatever the
+    /// length of the phrase it is stuck on.
+    public static func isRepetitionLoop(_ text: String, minimumWords: Int = 24) -> Bool {
+        let words = text
+            .lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+
+        // Short lines repeat honestly. "no, no, no" is something people say.
+        guard words.count >= minimumWords else { return false }
+
+        let distinct = Set(words).count
+        // Real speech of this length runs well above a third distinct words,
+        // even at its most repetitive. A loop sits near a tenth.
+        return Double(distinct) / Double(words.count) < 0.22
+    }
 }

@@ -343,7 +343,22 @@ final class PanelController: NSObject {
         let spoken = awareness.transcript.text(lastSeconds: 120)
         let screen = awareness.screenContext?.summary ?? ""
         let prompt = AwarenessPrompt.build(
-            question: "The last thing said was: \"\(line)\"",
+            // An instruction, not a line of dialogue.
+            //
+            // This used to hand over only the last thing said, in quotes, on
+            // top of a transcript. The model read that as a script to continue
+            // and wrote the next turn of the conversation — "Human: what's the
+            // name of the platform he is describing?" — a question addressed to
+            // nobody, in a voice that was not its own.
+            question: """
+                Decide whether to say something to the user right now. \
+                The last thing said on the call was: "\(line)"
+
+                Answer with the thing the user should know, in one sentence, \
+                addressed to them. If there is nothing worth interrupting for, \
+                answer with nothing at all. Never continue the conversation, \
+                never write a line of dialogue, and never label a speaker.
+                """,
             conversation: spoken,
             screen: screen
         )

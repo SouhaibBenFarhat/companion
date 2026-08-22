@@ -125,18 +125,38 @@ actor WhisperPipeline {
     func decode(_ samples: [Float]) async throws -> String {
         guard let pipe else { return "" }
 
+        // The thresholds are Whisper's own defence against its worst failure,
+        // and they are not optional here.
+        //
+        // Left off, a window it cannot make sense of comes back as a loop:
+        // "and type, and type, and type" for a hundred words. Every one of
+        // those settings below exists to catch that. The compression ratio of
+        // repeated text is enormous, so it trips the check, and the decode is
+        // retried at a higher temperature until it stops repeating.
+        //
+        // The cost is real — a fallback pass is another decode — but it is
+        // paid only on windows that failed, and the alternative is filling the
+        // panel with words nobody said.
         var options = DecodingOptions(
             verbose: false,
             task: .transcribe,
             language: language,
             temperature: 0,
-            temperatureFallbackCount: 0,
+            temperatureIncrementOnFallback: 0.2,
+            temperatureFallbackCount: 3,
             usePrefillPrompt: true,
             detectLanguage: false,
             skipSpecialTokens: true,
             withoutTimestamps: true,
             wordTimestamps: false,
             clipTimestamps: [],
+            // Whisper's published values. Above this ratio the text is judged
+            // too repetitive to be real; below that log probability it is
+            // judged a guess; and a high no-speech probability with a low
+            // score is silence, which is where the loops start.
+            compressionRatioThreshold: 2.4,
+            logProbThreshold: -1.0,
+            noSpeechThreshold: 0.6,
             chunkingStrategy: ChunkingStrategy.none
         )
         if !promptTokens.isEmpty { options.promptTokens = promptTokens }
