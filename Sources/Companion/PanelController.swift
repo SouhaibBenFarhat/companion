@@ -472,7 +472,6 @@ final class PanelController: NSObject {
                 "hideFromScreenShare": settings.hideFromScreenShare,
                 "theme": settings.theme.rawValue,
                 "transcriptionEngine": settings.transcriptionEngine.rawValue,
-                "persistTranscript": settings.awareness.persistTranscript,
                 "hasRepository": settings.hasRepository,
                 "microphoneMissing": AudioInputSelection.isPreferredMissing(
                     preferredUID: settings.microphoneDeviceUID,

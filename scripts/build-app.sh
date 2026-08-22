@@ -36,6 +36,9 @@ fi
 # Kept in step with the template on every build.
 scripts/make-dev-plist.sh > /dev/null
 
+# Cheap, and it catches a crash that only shows itself on launch.
+scripts/check-dictionary-keys.sh
+
 echo "==> Building the interface"
 npm --prefix web run build
 
