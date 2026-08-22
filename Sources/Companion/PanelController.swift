@@ -144,6 +144,10 @@ final class PanelController: NSObject {
                         "who": entry.speaker.title,
                         "text": entry.text,
                         "live": entry.isVolatile,
+                        // Where this sits in the call, so the panel can place
+                        // an unprompted suggestion among the lines it was
+                        // about rather than above all of them.
+                        "at": entry.startSeconds,
                     ]
                 },
             ])
@@ -401,6 +405,10 @@ final class PanelController: NSObject {
                     "type": "suggestion",
                     "text": text,
                     "reason": reason.rawValue,
+                    // The moment it is about: the end of the transcript it was
+                    // given. A note pinned above the whole conversation reads
+                    // as being about the beginning of it.
+                    "at": self.awareness.transcript.lastEntry?.startSeconds ?? 0,
                 ])
             }
         )

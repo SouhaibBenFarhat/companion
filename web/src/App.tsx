@@ -29,7 +29,7 @@ export function App() {
   const [captureError, setCaptureError] = useState('')
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [screen, setScreen] = useState('')
-  const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [screenshot, setScreenshot] = useState<'capturing' | 'ready' | 'failed' | 'none'>('none')
 
   useEffect(() => {
@@ -88,7 +88,12 @@ export function App() {
           setScreen([payload.app, payload.detail].filter(Boolean).join(' · '))
           break
         case 'suggestion':
-          setSuggestion({ text: payload.text, reason: payload.reason })
+          // Kept, not replaced. Each note belongs to the moment it was about,
+          // and a call produces several.
+          setSuggestions((all) => [
+            ...all,
+            { id: `noticed-${payload.at}-${all.length}`, text: payload.text, reason: payload.reason, at: payload.at },
+          ])
           break
         case 'screenshot':
           setScreenshot(payload.state)
@@ -173,9 +178,9 @@ export function App() {
             errorCode={errorCode}
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
-            suggestion={suggestion}
+            suggestions={suggestions}
             transcript={transcript}
-            onDismissSuggestion={() => setSuggestion(null)}
+            onDismissSuggestion={(id) => setSuggestions((all) => all.filter((one) => one.id !== id))}
           />
           <Composer
             busy={busy}

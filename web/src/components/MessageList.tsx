@@ -91,7 +91,7 @@ export function MessageList({
   errorCode,
   agentFound,
   agentTitle,
-  suggestion,
+  suggestions,
   transcript,
   onDismissSuggestion,
 }: {
@@ -103,10 +103,10 @@ export function MessageList({
   errorCode: string
   agentFound: boolean
   agentTitle: string
-  suggestion: Suggestion | null
+  suggestions: Suggestion[]
   /** What is being heard right now. Empty unless listening. */
   transcript: TranscriptLine[]
-  onDismissSuggestion: () => void
+  onDismissSuggestion: (id: string) => void
 }) {
   const bottom = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
@@ -120,9 +120,33 @@ export function MessageList({
     const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight
     if (distanceFromBottom > NEAR_BOTTOM) return
     bottom.current?.scrollIntoView({ block: 'end' })
-  }, [messages.length, streaming, busy, error, transcript.length])
+  }, [messages.length, streaming, busy, error, transcript.length, suggestions.length])
 
-  const empty = messages.length === 0 && !streaming && !busy && transcript.length === 0
+  const empty =
+    messages.length === 0 && !streaming && !busy && transcript.length === 0 && suggestions.length === 0
+
+  // Lines and notes share one order, because a note is about the words around
+  // it. Pinned above the transcript it read as being about the start of the
+  // call rather than about the sentence that prompted it.
+  const timeline = [
+    ...transcript.map((line) => ({ at: line.at, key: line.id, node: <Spoken line={line} /> })),
+    ...suggestions.map((one) => ({
+      at: one.at,
+      key: one.id,
+      node: (
+        <Callout
+          title="Noticed"
+          action={
+            <Button variant="ghost" size="xs" tight onClick={() => onDismissSuggestion(one.id)}>
+              Dismiss
+            </Button>
+          }
+        >
+          <Markdown text={one.text} />
+        </Callout>
+      ),
+    })),
+  ].sort((one, two) => one.at - two.at)
 
   return (
     <div ref={list} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
@@ -143,23 +167,9 @@ export function MessageList({
         <Bubble key={message.id} message={message} />
       ))}
 
-      {suggestion && (
-        <Callout
-          title="Noticed"
-          action={
-            <Button variant="ghost" size="xs" tight onClick={onDismissSuggestion}>
-              Dismiss
-            </Button>
-          }
-        >
-          <Markdown text={suggestion.text} />
-        </Callout>
-      )}
-
-      {/* After the messages, because it is happening now. The live line is
-          last and stays faded until the recogniser settles on it. */}
-      {transcript.map((line) => (
-        <Spoken key={line.id} line={line} />
+      {/* After the messages, because it is happening now. */}
+      {timeline.map((item) => (
+        <div key={item.key}>{item.node}</div>
       ))}
 
       {streaming && <Answer text={streaming} />}

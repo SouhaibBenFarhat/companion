@@ -85,11 +85,16 @@ export interface TranscriptLine {
   text: string
   /** Still being revised by the recogniser. */
   live: boolean
+  /** Seconds into the call, so lines and notes can share one order. */
+  at: number
 }
 
 export interface Suggestion {
+  id: string
   text: string
   reason: string
+  /** Seconds into the call, so it sits with the lines it was about. */
+  at: number
 }
 
 export interface InputDevice {
@@ -127,7 +132,7 @@ export type Incoming =
   | { type: 'openSettings' }
   | { type: 'transcript'; entries: TranscriptLine[] }
   | { type: 'screen'; app: string; detail: string }
-  | { type: 'suggestion'; text: string; reason: string }
+  | { type: 'suggestion'; text: string; reason: string; at: number }
   | { type: 'screenshot'; state: 'capturing' | 'ready' | 'failed' | 'none'; name?: string; message?: string }
 
 /** Everything the page can ask Swift to do. */
