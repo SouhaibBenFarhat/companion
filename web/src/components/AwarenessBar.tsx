@@ -1,28 +1,11 @@
 import { send } from '../lib/bridge'
-import { Bar, Button, LiveDot, Meter, Toggle, cx } from '../ui'
-import type { Levels, ListeningState, TranscriptLine } from '../lib/types'
-
-/// The last few lines, so it is obvious what Companion is hearing.
-function Transcript({ lines }: { lines: TranscriptLine[] }) {
-  if (lines.length === 0) return null
-
-  return (
-    <div className="mt-2 max-h-20 space-y-0.5 overflow-y-auto">
-      {lines.slice(-6).map((line) => (
-        <p key={line.id} className={cx('text-xs leading-snug', line.live ? 'text-muted' : 'text-ink')}>
-          <span className="text-muted">{line.who}: </span>
-          {line.text}
-        </p>
-      ))}
-    </div>
-  )
-}
+import { Bar, Button, LiveDot, Meter, Toggle } from '../ui'
+import type { Levels, ListeningState } from '../lib/types'
 
 export function AwarenessBar({
   listening,
   levels,
   error,
-  transcript,
   screen,
   suggestionsEnabled,
   onSuggestionsChange,
@@ -30,7 +13,6 @@ export function AwarenessBar({
   listening: ListeningState
   levels: Levels
   error: string
-  transcript: TranscriptLine[]
   screen: string
   suggestionsEnabled: boolean
   onSuggestionsChange: (value: boolean) => void
@@ -78,7 +60,6 @@ export function AwarenessBar({
               </p>
             )}
 
-            <Transcript lines={transcript} />
           </>
         )}
       </div>

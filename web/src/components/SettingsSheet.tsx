@@ -73,6 +73,7 @@ export function SettingsSheet({
       hideFromScreenShare: next.hideFromScreenShare,
       theme: next.theme,
       transcriptionEngine: next.transcriptionEngine,
+      persistTranscript: next.persistTranscript,
     })
   }
 
@@ -186,6 +187,13 @@ export function SettingsSheet({
             ]}
           />
         </Field>
+
+        <Toggle
+          label="Save the transcript"
+          hint="Writes each settled line to a Markdown file as it is said, one file per call, in Companion's own folder. Off by default: a call transcript is mostly someone else's words, and the safest place for those is nowhere."
+          checked={draft.persistTranscript}
+          onChange={(persistTranscript) => apply({ persistTranscript })}
+        />
 
         <Toggle
           label="Speak up without being asked"

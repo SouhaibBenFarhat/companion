@@ -161,4 +161,5 @@ export type Outgoing =
       hideFromScreenShare?: boolean
       theme?: string
       transcriptionEngine?: string
+      persistTranscript?: boolean
     }

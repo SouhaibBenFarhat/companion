@@ -138,7 +138,6 @@ export function App() {
         listening={state.listening}
         levels={levels}
         error={captureError}
-        transcript={transcript}
         screen={screen}
         suggestionsEnabled={state.settings.suggestionsEnabled}
         onSuggestionsChange={(value) =>
@@ -175,6 +174,7 @@ export function App() {
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
             suggestion={suggestion}
+            transcript={transcript}
             onDismissSuggestion={() => setSuggestion(null)}
           />
           <Composer

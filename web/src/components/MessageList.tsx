@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
-import { Button, Callout, Notice, Pulse, Surface } from '../ui'
+import { Button, Callout, LiveDot, Notice, Pulse, Surface, cx } from '../ui'
 import { send } from '../lib/bridge'
-import type { Msg, Suggestion } from '../lib/types'
+import type { Msg, Suggestion, TranscriptLine } from '../lib/types'
 
 /** Within this far of the end still counts as "following along". */
 const NEAR_BOTTOM = 60
@@ -24,6 +24,41 @@ function Bubble({ message }: { message: Msg }) {
     <div className="flex justify-end">
       <div className="selectable max-w-[var(--bubble-max)] whitespace-pre-wrap break-words rounded-lg bg-accent px-3 py-2 font-medium text-accent-fg">
         {message.text}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Something said out loud, in the conversation where you can read it.
+ *
+ * Deliberately not the same shape as a message you typed. Spoken words are
+ * heard, not asked — they may be wrong, they were not addressed to Companion,
+ * and half of them are the other person's. A quiet outlined bubble says "this
+ * is what I heard" without competing with the answers.
+ *
+ * Your side sits right, theirs left, matching where their typed equivalents
+ * would be.
+ */
+function Spoken({ line }: { line: TranscriptLine }) {
+  const mine = line.speaker === 'me'
+
+  return (
+    <div className={cx('flex', mine ? 'justify-end' : 'justify-start')}>
+      <div
+        data-surface="well"
+        className={cx(
+          'selectable max-w-[var(--bubble-max)] rounded-lg border px-2.5 py-1.5',
+          line.live ? 'border-line' : 'border-line-strong',
+        )}
+      >
+        <span className="mb-0.5 flex items-center gap-1.5 text-2xs font-medium uppercase tracking-caps text-muted">
+          {line.live && <LiveDot />}
+          {line.who}
+        </span>
+        <span className={cx('block text-sm leading-snug', line.live ? 'text-muted' : 'text-ink')}>
+          {line.text}
+        </span>
       </div>
     </div>
   )
@@ -57,6 +92,7 @@ export function MessageList({
   agentFound,
   agentTitle,
   suggestion,
+  transcript,
   onDismissSuggestion,
 }: {
   messages: Msg[]
@@ -68,6 +104,8 @@ export function MessageList({
   agentFound: boolean
   agentTitle: string
   suggestion: Suggestion | null
+  /** What is being heard right now. Empty unless listening. */
+  transcript: TranscriptLine[]
   onDismissSuggestion: () => void
 }) {
   const bottom = useRef<HTMLDivElement>(null)
@@ -82,9 +120,9 @@ export function MessageList({
     const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight
     if (distanceFromBottom > NEAR_BOTTOM) return
     bottom.current?.scrollIntoView({ block: 'end' })
-  }, [messages.length, streaming, busy, error])
+  }, [messages.length, streaming, busy, error, transcript.length])
 
-  const empty = messages.length === 0 && !streaming && !busy
+  const empty = messages.length === 0 && !streaming && !busy && transcript.length === 0
 
   return (
     <div ref={list} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
@@ -117,6 +155,12 @@ export function MessageList({
           <Markdown text={suggestion.text} />
         </Callout>
       )}
+
+      {/* After the messages, because it is happening now. The live line is
+          last and stays faded until the recogniser settles on it. */}
+      {transcript.map((line) => (
+        <Spoken key={line.id} line={line} />
+      ))}
 
       {streaming && <Answer text={streaming} />}
       {busy && !streaming && <Working tool={tool} />}

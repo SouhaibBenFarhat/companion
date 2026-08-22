@@ -42,6 +42,9 @@ final class AwarenessCoordinator {
     /// Which recogniser to build. Set from Settings before listening starts.
     var engineKind: TranscriptionEngineKind = .whisper
 
+    /// The file this call is being written to, when the user asked for one.
+    private var transcriptFile: TranscriptFile?
+
     init() {
         capture.onError = { [weak self] message in self?.onError?(message) }
         capture.onChunk = { [weak self] chunk in self?.consume(chunk) }
@@ -69,6 +72,7 @@ final class AwarenessCoordinator {
 
     func start(settings: AwarenessSettings) {
         listeningStartedAt = Date().timeIntervalSinceReferenceDate
+        startTranscriptFile(if: settings.persistTranscript)
         guard !isListening else { return }
         self.settings = settings
         guard SpeechSupport.isAvailable else {
@@ -98,6 +102,19 @@ final class AwarenessCoordinator {
                 self.transcript.appendFinal(text, speaker: speaker, at: start)
                 self.publish()
 
+                // Written as it settles, not at the end. A transcript that only
+                // reaches disk on a clean quit is one you lose on the day
+                // something crashes mid-call — the day you wanted it.
+                if let file = self.transcriptFile {
+                    do {
+                        try file.append(speaker: speaker, text: text, at: start)
+                    } catch {
+                        SessionLog.shared.write("transcript", "could not write: \(error.localizedDescription)")
+                        self.transcriptFile = nil
+                        self.onError?("Could not save the transcript. Listening continues.")
+                    }
+                }
+
                 // No timer. A settled line from the other person is a real
                 // event, and it is the only kind worth thinking about.
                 if let reason = self.trigger.evaluate(
@@ -126,7 +143,33 @@ final class AwarenessCoordinator {
         onStateChanged?()
     }
 
+    /// Opens the file this call will be written to, or leaves it closed.
+    private func startTranscriptFile(if wanted: Bool) {
+        transcriptFile = nil
+        guard wanted else { return }
+
+        let now = Date()
+        let directory = TranscriptFile.directory(
+            in: StorageLocation.applicationSupportDirectory()
+        )
+        let file = TranscriptFile(url: directory.appendingPathComponent(TranscriptFile.name(for: now)))
+        do {
+            try file.begin(at: now)
+            transcriptFile = file
+            SessionLog.shared.write("transcript", "writing to \(file.url.lastPathComponent)")
+        } catch {
+            SessionLog.shared.write("transcript", "could not start: \(error.localizedDescription)")
+            onError?("Could not save the transcript. Listening continues.")
+        }
+    }
+
+    /// Where the transcripts are, for the panel to open in Finder.
+    var transcriptsDirectory: URL {
+        TranscriptFile.directory(in: StorageLocation.applicationSupportDirectory())
+    }
+
     func stop() {
+        transcriptFile = nil
         capture.stop()
         screen?.stop()
         screen = nil
