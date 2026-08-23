@@ -48,6 +48,27 @@ public struct SuggestionDecision: Codable, Equatable, Sendable {
         self.because = because
     }
 
+    /// The shape the reply must take, handed to the CLI as `--json-schema`.
+    ///
+    /// This is the difference between asking and enforcing. The CLI turns it
+    /// into a tool the model has to call, and the runtime checks the arguments
+    /// against it before Companion sees them — so a remark has nowhere to go,
+    /// rather than being asked politely not to appear.
+    ///
+    /// `because` is required on purpose. A run of silences looked identical
+    /// whether it had seen a question and judged it already answered or never
+    /// seen one at all, and that was guessed at for three rounds.
+    public static let schema = """
+        {"type":"object",\
+        "properties":{\
+        "speak":{"type":"boolean","description":"Whether to show the user a note right now."},\
+        "kind":{"type":"string","enum":["answer","correction","fact"],\
+        "description":"answer: somebody on the call asked something and this answers it. correction: something said is wrong and this says what is true. fact: something they are missing and would want."},\
+        "text":{"type":"string","description":"One sentence, shown to the user word for word. Required when speak is true."},\
+        "because":{"type":"string","description":"A few words on why. Read by a person diagnosing a quiet run."}},\
+        "required":["speak","because"]}
+        """
+
     /// Reads a decision out of whatever the model produced.
     ///
     /// Tolerant of a code fence and of prose either side of the object, because

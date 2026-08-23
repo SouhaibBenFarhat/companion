@@ -441,21 +441,34 @@ final class PanelController: NSObject {
             // Nothing. It is reacting to a transcript it has already been
             // given, and it runs in the user's home folder when no project has
             // been chosen — where reading tools mean reading anything.
-            permission: .noTools
+            permission: .noTools,
+            // A shape it cannot escape, rather than one it is asked to keep.
+            jsonSchema: SuggestionDecision.schema
         )
 
-        var answer = ""
+        // Two sources, and the validated one wins.
+        //
+        // With --json-schema the answer arrives as a checked object and the
+        // text is empty. Without it — an older CLI — the text is all there is,
+        // and a note parsed out of prose is better than no note at all.
+        var structured: String?
+        var spokenText = ""
         SessionLog.shared.write("suggest", "thinking, reason=\(reason.rawValue)")
         suggestionRunner.run(
             command: command,
             kind: settings.agent,
             onEvent: { event in
-                if case .assistantText(let chunk) = event { answer += chunk }
+                switch event {
+                case .structuredOutput(let object): structured = object
+                case .assistantText(let chunk): spokenText += chunk
+                default: break
+                }
             },
             onFinish: { [weak self] _, _ in
                 guard let self else { return }
                 // A decision, not prose. Anything that is not one is silence:
                 // a missed note costs nothing, a wrong one is an interruption.
+                let answer = structured ?? spokenText
                 guard let decision = SuggestionDecision.parse(answer) else {
                     SessionLog.shared.write("suggest", "no decision in the reply, staying quiet")
                     return
@@ -717,6 +730,11 @@ final class PanelController: NSObject {
 
     private func handle(_ event: AgentEvent) {
         switch event {
+        case .structuredOutput:
+            // Only the unprompted note asks for a shape, and it reads the
+            // object itself rather than through here.
+            break
+
         case .sessionStarted(let id):
             // Storing this is what makes "no, do it the other way" work: the
             // next question resumes an agent that still remembers what it read.

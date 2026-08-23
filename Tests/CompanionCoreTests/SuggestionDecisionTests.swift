@@ -70,3 +70,44 @@ final class SuggestionDecisionTests: XCTestCase {
         }
     }
 }
+
+final class SuggestionSchemaTests: XCTestCase {
+    /// Handed to the CLI as --json-schema, so it has to be valid JSON or the
+    /// note silently stops working.
+    func testTheSchemaIsValidJSON() throws {
+        let data = Data(SuggestionDecision.schema.utf8)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertEqual(object["type"] as? String, "object")
+    }
+
+    /// Silence must be answerable without inventing a note, so only these two
+    /// are required.
+    func testOnlyTheDecisionAndItsReasonAreRequired() throws {
+        let data = Data(SuggestionDecision.schema.utf8)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let required = try XCTUnwrap(object["required"] as? [String])
+        XCTAssertEqual(Set(required), ["speak", "because"])
+    }
+
+    /// The kinds are closed in the schema itself, so a remark has nowhere to
+    /// go — the runtime rejects it rather than the app filtering it out.
+    func testTheKindsAreClosedInTheSchema() throws {
+        let data = Data(SuggestionDecision.schema.utf8)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let properties = try XCTUnwrap(object["properties"] as? [String: Any])
+        let kind = try XCTUnwrap(properties["kind"] as? [String: Any])
+        let cases = try XCTUnwrap(kind["enum"] as? [String])
+
+        XCTAssertEqual(Set(cases), Set(SuggestionDecision.Kind.allCases.map(\.rawValue)))
+    }
+
+    /// What the CLI hands back is the object itself, so it must parse.
+    func testAValidatedObjectParses() {
+        let fromTheCLI = #"{"speak":true,"kind":"answer","text":"Debouncing waits for a pause.","because":"direct question"}"#
+        let decision = SuggestionDecision.parse(fromTheCLI)
+        XCTAssertEqual(decision?.note, "Debouncing waits for a pause.")
+        XCTAssertEqual(decision?.because, "direct question")
+    }
+}

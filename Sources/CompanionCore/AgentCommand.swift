@@ -106,6 +106,10 @@ public enum AgentCommandBuilder {
     ///   - systemPrompt: appended to the agent's own system prompt, never
     ///     replacing it. This is where the "you are answering live during a
     ///     call, be brief" instruction goes.
+    /// - Parameter jsonSchema: a shape the reply must take. The CLI turns it
+    ///   into a tool the model has to call, and the runtime validates the
+    ///   arguments — so the answer arrives as an object rather than as prose
+    ///   that has to be parsed and hoped about. Claude only; Codex ignores it.
     public static func build(
         kind: AgentKind,
         executable: URL,
@@ -113,7 +117,8 @@ public enum AgentCommandBuilder {
         workingDirectory: URL,
         sessionID: String? = nil,
         systemPrompt: String? = nil,
-        permission: AgentPermission = .readOnly
+        permission: AgentPermission = .readOnly,
+        jsonSchema: String? = nil
     ) -> AgentCommand {
         let arguments: [String]
         switch kind {
@@ -121,7 +126,8 @@ public enum AgentCommandBuilder {
             arguments = claudeArguments(
                 sessionID: sessionID,
                 systemPrompt: systemPrompt,
-                permission: permission
+                permission: permission,
+                jsonSchema: jsonSchema
             )
         case .codex:
             arguments = codexArguments(
@@ -141,7 +147,8 @@ public enum AgentCommandBuilder {
     private static func claudeArguments(
         sessionID: String?,
         systemPrompt: String?,
-        permission: AgentPermission
+        permission: AgentPermission,
+        jsonSchema: String? = nil
     ) -> [String] {
         // `--verbose` is required alongside stream-json in print mode, otherwise
         // the CLI refuses to start and we get an empty panel with no reason.
@@ -162,6 +169,9 @@ public enum AgentCommandBuilder {
         }
         if let systemPrompt, !systemPrompt.isEmpty {
             arguments += ["--append-system-prompt", systemPrompt]
+        }
+        if let jsonSchema, !jsonSchema.isEmpty {
+            arguments += ["--json-schema", jsonSchema]
         }
 
         switch permission {
