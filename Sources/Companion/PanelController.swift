@@ -14,7 +14,8 @@ final class PanelController: NSObject {
     private let awareness = AwarenessCoordinator()
     /// Separate from `runner`, so a suggestion Companion decided to make on its
     /// own can never cancel an answer the user actually asked for.
-    private let suggestionRunner = AgentRunner()
+    /// One agent process for the whole call, rather than one per note.
+    private let suggestions = SuggestionSession()
 
     private var settings: Settings
     private let settingsStore: JSONFileStore<Settings>
@@ -345,9 +346,37 @@ final class PanelController: NSObject {
         persistSettings()
         awareness.engineKind = settings.transcriptionEngine
         awareness.start(settings: settings.awareness)
+        startSuggestionSession()
+    }
+
+    /// Opens the one agent process the whole call will use.
+    ///
+    /// The flags that cannot change mid-call are set here: the system prompt,
+    /// the schema, the working folder. Everything that changes per turn — the
+    /// transcript, what has already been said — goes in the message.
+    private func startSuggestionSession() {
+        guard settings.awareness.suggestionsEnabled else { return }
+        guard let executable = AgentLocator.resolve(
+            kind: settings.agent, configuredPath: settings.agentPath
+        ) else { return }
+
+        notesAlreadyGiven = []
+        suggestions.start(
+            executable: executable,
+            workingDirectory: settings.repositoryURL(),
+            systemPrompt: AgentContext.systemPrompt(
+                repository: settings.repositoryURL(),
+                hasRepository: settings.hasRepository,
+                isListening: true,
+                watching: AwarenessPrompt.watchingInstruction
+            ),
+            schema: SuggestionDecision.schema,
+            environment: AgentEnvironment.forAgent(inheriting: ProcessInfo.processInfo.environment)
+        )
     }
 
     func stopListening() {
+        suggestions.stop()
         awareness.stop()
         settings.awareness.enabled = false
         persistSettings()
@@ -360,7 +389,7 @@ final class PanelController: NSObject {
         guard settings.awareness.enabled, settings.awareness.suggestionsEnabled else { return }
         // Never while the user is waiting on an answer they asked for, and
         // never on top of a suggestion already in flight.
-        guard !runner.isRunning, !suggestionRunner.isRunning else { return }
+        guard !runner.isRunning, suggestions.isRunning else { return }
         guard let executable = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)
         else { return }
 
@@ -426,81 +455,48 @@ final class PanelController: NSObject {
                 """
         )
 
-        let command = AgentCommandBuilder.build(
-            kind: settings.agent,
-            executable: executable,
-            prompt: prompt,
-            workingDirectory: settings.repositoryURL(),
-            sessionID: nil,
-            systemPrompt: AgentContext.systemPrompt(
-                repository: settings.repositoryURL(),
-                hasRepository: settings.hasRepository,
-                isListening: true,
-                watching: AwarenessPrompt.watchingInstruction
-            ),
-            // Nothing. It is reacting to a transcript it has already been
-            // given, and it runs in the user's home folder when no project has
-            // been chosen — where reading tools mean reading anything.
-            permission: .noTools,
-            // A shape it cannot escape, rather than one it is asked to keep.
-            jsonSchema: SuggestionDecision.schema
-        )
-
-        // Two sources, and the validated one wins.
-        //
-        // With --json-schema the answer arrives as a checked object and the
-        // text is empty. Without it — an older CLI — the text is all there is,
-        // and a note parsed out of prose is better than no note at all.
-        var structured: String?
-        var spokenText = ""
         SessionLog.shared.write("suggest", "thinking, reason=\(reason.rawValue)")
-        suggestionRunner.run(
-            command: command,
-            kind: settings.agent,
-            onEvent: { event in
-                switch event {
-                case .structuredOutput(let object): structured = object
-                case .assistantText(let chunk): spokenText += chunk
-                default: break
-                }
-            },
-            onFinish: { [weak self] _, _ in
-                guard let self else { return }
-                // A decision, not prose. Anything that is not one is silence:
-                // a missed note costs nothing, a wrong one is an interruption.
-                let answer = structured ?? spokenText
-                guard let decision = SuggestionDecision.parse(answer) else {
-                    SessionLog.shared.write("suggest", "no decision in the reply, staying quiet")
-                    return
-                }
-                guard let spoken = decision.note else {
-                    SessionLog.shared.write(
-                        "suggest",
-                        "quiet: \(decision.because ?? "no reason given")"
-                    )
-                    return
-                }
-                // The filters stay as a backstop for what slips through the
-                // shape.
-                guard let text = SuggestionCleaner.clean(spoken) else {
-                    SessionLog.shared.write("suggest", "dropped, model wrote dialogue")
-                    return
-                }
-                self.notesAlreadyGiven.append(text)
-                if self.notesAlreadyGiven.count > 6 { self.notesAlreadyGiven.removeFirst() }
-                guard self.awareness.admitSuggestion(
-                    text,
-                    answersAQuestion: decision.kind == .answer
-                ) else { return }
 
-                // A message, so it sits where it happened. In its own list it
-                // could only ever be drawn after every line, including the
-                // lines it was about.
-                self.current.append(Message(role: .noticed, text: text))
-                self.saveConversationSoon()
-                self.sendMessages()
-            }
-        )
+        Task { [weak self] in
+            guard let self else { return }
+            // One process for the whole call. Spawning a fresh CLI per turn
+            // cost about two seconds before the model had read a word — a
+            // third of the delay, paid again on every line somebody speaks.
+            let answer = await self.suggestions.ask(prompt)
+            self.handleSuggestion(answer)
+        }
+    }
+
+    /// Turns one answer into a note, or into silence.
+    private func handleSuggestion(_ answer: String?) {
+        // A decision, not prose. Anything that is not one is silence: a missed
+        // note costs nothing, a wrong one is an interruption.
+        guard let answer, let decision = SuggestionDecision.parse(answer) else {
+            SessionLog.shared.write("suggest", "no decision in the reply, staying quiet")
+            return
+        }
+        guard let spoken = decision.note else {
+            SessionLog.shared.write("suggest", "quiet: \(decision.because ?? "no reason given")")
+            return
+        }
+        // The filters stay as a backstop for what slips through the shape.
+        guard let text = SuggestionCleaner.clean(spoken) else {
+            SessionLog.shared.write("suggest", "dropped, model wrote dialogue")
+            return
+        }
+        guard awareness.admitSuggestion(text, answersAQuestion: decision.kind == .answer) else {
+            return
+        }
+
+        notesAlreadyGiven.append(text)
+        if notesAlreadyGiven.count > 6 { notesAlreadyGiven.removeFirst() }
+
+        // A message, so it sits where it happened. In its own list it could
+        // only ever be drawn after every line, including the lines it was
+        // about.
+        current.append(Message(role: .noticed, text: text))
+        saveConversationSoon()
+        sendMessages()
     }
 
     /// Takes one picture of the window in front, for the next question.
