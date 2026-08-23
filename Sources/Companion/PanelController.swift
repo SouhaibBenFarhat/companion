@@ -27,6 +27,10 @@ final class PanelController: NSObject {
     /// half-message behind in the saved history.
     private var pendingAnswer = ""
     private var isReady = false
+    /// Notes already given during this call, so the same one is not given
+    /// twice in other words.
+    private var notesAlreadyGiven: [String] = []
+
     /// Pending conversation save, so a run of settled lines writes once.
     private var saveWork: DispatchWorkItem?
 
@@ -362,6 +366,16 @@ final class PanelController: NSObject {
 
         let spoken = awareness.transcript.text(lastSeconds: 120)
         let screen = awareness.screenContext?.summary ?? ""
+
+        // What it has already said, so it does not say it again. Three notes
+        // about closures arrived one after another, each true and each the same.
+        let recentNotes = notesAlreadyGiven.isEmpty
+            ? ""
+            : """
+                You have already told them this during this call. Do not repeat \
+                any of it, or say the same thing in other words:
+                \(notesAlreadyGiven.map { "- \($0)" }.joined(separator: "\n"))
+                """
         let prompt = AwarenessPrompt.build(
             question: """
                 Given all of that: is there anything the user needs to know \
@@ -373,24 +387,33 @@ final class PanelController: NSObject {
             // script and a script asks to be continued. Underneath it, this
             // was ignored and the panel filled with lines of dialogue.
             instruction: """
-                You are writing a private note to one person: the user of this \
-                app. Nobody on the call can see it.
+                You are helping one person — the user of this app — while they \
+                are on a call. Nobody else can see what you write.
 
-                Below is a transcript of a call they are on. It is material to \
-                read, not a conversation to take part in. Never continue it, \
-                never write a line of dialogue, and never begin with a speaker \
-                label of any kind.
+                Below is a transcript of that call. It is material to read, not \
+                a conversation to join.
 
-                Reply with one sentence telling the user something they can act \
-                on in the next few seconds and would otherwise miss. If there is \
-                nothing, reply with nothing at all — that is the normal case.
+                Reply with one JSON object and nothing else:
 
-                Your reply is shown to the user word for word, in a small box, \
-                while they are talking to somebody. So: no preamble, no quoting \
-                anything back, no repeating the transcript or anything in angle \
-                brackets, and nothing about yourself or about what you can or \
-                cannot tell. If you are unsure, that is a reason to say nothing, \
-                not a thing to say.
+                {"speak": false}
+
+                or
+
+                {"speak": true, "kind": "answer|correction|fact", "text": "one sentence"}
+
+                Use "answer" only when somebody on the call asked a question \
+                that this answers. Use "correction" only when something said is \
+                wrong and you can say what is true instead. Use "fact" only for \
+                something they are missing and would want — a limit, a version, \
+                a name, a number.
+
+                {"speak": false} is the right answer almost every time. Choose \
+                it for anything that is a remark, a summary, agreement, an \
+                explanation of something already explained, or anything about \
+                you rather than about their work. If you are unsure, it is \
+                false.
+
+                \(recentNotes)
                 """
         )
 
@@ -422,12 +445,24 @@ final class PanelController: NSObject {
             },
             onFinish: { [weak self] _, _ in
                 guard let self else { return }
-                // A line of dialogue never reaches the panel, whatever the
-                // prompt asked for.
-                guard let text = SuggestionCleaner.clean(answer) else {
+                // A decision, not prose. Anything that is not one is silence:
+                // a missed note costs nothing, a wrong one is an interruption.
+                guard let decision = SuggestionDecision.parse(answer) else {
+                    SessionLog.shared.write("suggest", "no decision in the reply, staying quiet")
+                    return
+                }
+                guard let spoken = decision.note else {
+                    SessionLog.shared.write("suggest", "decided to stay quiet")
+                    return
+                }
+                // The filters stay as a backstop for what slips through the
+                // shape.
+                guard let text = SuggestionCleaner.clean(spoken) else {
                     SessionLog.shared.write("suggest", "dropped, model wrote dialogue")
                     return
                 }
+                self.notesAlreadyGiven.append(text)
+                if self.notesAlreadyGiven.count > 6 { self.notesAlreadyGiven.removeFirst() }
                 guard self.awareness.admitSuggestion(text) else { return }
                 // Kept only if the user allows the transcript to be stored.
                 // Otherwise it is shown and forgotten, which is what "do not
