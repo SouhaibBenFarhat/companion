@@ -40,8 +40,11 @@ final class WhisperEngine: TranscriptionEngine {
     /// One preview decode at a time. A second queued behind the first is stale
     /// before it starts.
     private var previewInFlight = false
-    /// The last preview, to compare the next one against.
-    private var lastPreview = ""
+    /// Settles words as soon as two passes agree, rather than when the speaker
+    /// stops. Without it the transcript sits a whole window behind the call.
+    private var agreement = LocalAgreement()
+    /// Where the words being settled mid-window belong in the call.
+    private var pendingStart: TimeInterval = 0
 
     /// Whisper wants 16 kHz mono Float32. `WhisperKit.sampleRate` is 16000, and
     /// `transcribe(audioArray:)` is documented "Array of 16khz raw float audio
@@ -240,19 +243,20 @@ final class WhisperEngine: TranscriptionEngine {
         }
 
         if window.isClosed {
-            lastPreview = ""
+            // Whatever has not settled yet settles now: there will be no
+            // further pass to agree with.
+            let rest = agreement.finish(text)
+            pendingStart = 0
+            onVolatile?("", window.startSeconds)
+            guard !rest.isEmpty else { return }
 
-            // One line per sentence, not one per window.
-            //
-            // A window is up to fifteen seconds, and everything in it arrives
-            // as a single string. Shown whole it lands in the panel as a wall
-            // of text with the next wall on top of it, which is not how the
-            // conversation happened. Cut into sentences, each is its own line
-            // at its own moment.
-            let sentences = SentenceSplitter.split(text)
+            // One line per sentence, not one per window. Shown whole, fifteen
+            // seconds of speech lands as a wall of text with the next wall on
+            // top of it, which is not how the conversation happened.
+            let sentences = SentenceSplitter.split(rest)
             let times = SentenceSplitter.times(
                 for: sentences,
-                from: window.startSeconds,
+                from: max(pendingStart, window.startSeconds),
                 over: window.duration
             )
             for (sentence, at) in zip(sentences, times) {
@@ -261,16 +265,26 @@ final class WhisperEngine: TranscriptionEngine {
             return
         }
 
-        // Only the words this pass and the last one agree on.
+        // Settle what two passes agree on, right now.
         //
-        // Whisper re-decodes a growing window, so each preview can rewrite the
-        // whole line. Shown whole, the panel rewrites itself several times a
-        // second and text that was on screen a moment ago disappears. Shown as
-        // the agreed prefix, the line only ever grows.
-        let agreed = AgreedPrefix.of(lastPreview, text)
-        lastPreview = text
-        guard !agreed.isEmpty else { return }
-        onVolatile?(agreed, window.startSeconds)
+        // Waiting for the window to close put the transcript as far behind the
+        // call as the window is long — up to fifteen seconds. Whisper revises
+        // its own guesses as it hears more, so two passes agreeing on a word is
+        // a good sign it will not change its mind again, and the word can be
+        // shown as settled while the speaker is still talking.
+        let step = agreement.offer(text)
+
+        if !step.settled.isEmpty {
+            let at = max(pendingStart, window.startSeconds)
+            for sentence in SentenceSplitter.split(step.settled) {
+                onFinal?(sentence, at)
+            }
+            // The next settled words come after these, so they sort after them.
+            pendingStart = at + 0.001
+        }
+
+        // The tail, still being revised, stays faded until it settles.
+        onVolatile?(step.pending, max(pendingStart, window.startSeconds))
     }
 
     @MainActor

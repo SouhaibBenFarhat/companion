@@ -50,6 +50,12 @@ public struct TranscriptionWindower: Sendable {
     /// not clipped off the front of the window.
     public let prerollSeconds: TimeInterval
     /// How much audio a preview needs before it is worth decoding one.
+    ///
+    /// This is now the latency, not the window length: words settle as soon as
+    /// two passes agree, so the delay is this gap plus one decode — under two
+    /// seconds — rather than however long somebody talks for. Measured on this
+    /// Mac a decode costs 0.8 to 1.3 seconds, so a shorter gap than this would
+    /// queue passes behind each other and make it worse, not better.
     public let previewEverySeconds: TimeInterval
 
     private let segmenter: SpeechSegmenter
@@ -59,7 +65,7 @@ public struct TranscriptionWindower: Sendable {
         maximumSeconds: TimeInterval = 15,
         minimumSeconds: TimeInterval = 0.4,
         prerollSeconds: TimeInterval = 0.3,
-        previewEverySeconds: TimeInterval = 1.5,
+        previewEverySeconds: TimeInterval = 0.8,
         // Shorter than SpeechSegmenter's 0.7 default. That value was tuned for
         // a level meter, where being late costs nothing. Here it is the floor
         // on how long a settled line takes to appear, and a settled line is
