@@ -245,6 +245,50 @@ public enum TranscriptionNoise {
     /// Judged on distinct words rather than on repeated phrases: a loop always
     /// collapses to a tiny vocabulary spread over a long line, whatever the
     /// length of the phrase it is stuck on.
+    /// The text up to the point the recogniser started repeating itself.
+    ///
+    /// A loop almost never starts at the beginning. Whisper transcribes a
+    /// window correctly and then degenerates near the end — "she adds some
+    /// comments to outline her strategy. As she types, and type, and type, and
+    /// type" — so throwing the window away costs a real sentence to be rid of a
+    /// tail. Fifteen seconds of somebody talking disappeared each time, which
+    /// is what "large chunks are missing" was.
+    ///
+    /// Returns nil when there is nothing worth keeping in front of the loop.
+    public static func withoutRepetitionTail(_ text: String, minimumKeptWords: Int = 4) -> String? {
+        let pieces = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard pieces.count >= 12 else { return text }
+
+        let normalised = pieces.map { $0.lowercased().filter { $0.isLetter || $0.isNumber } }
+
+        // The earliest point where a short phrase starts repeating back to
+        // back. Phrases up to six words, because "and type," is two and "I'll
+        // say this is the input" is six.
+        var cut: Int?
+        for length in 1...6 {
+            var start = 0
+            while start + length * 3 <= pieces.count {
+                var repeats = 1
+                var next = start + length
+                while next + length <= pieces.count,
+                      Array(normalised[next..<(next + length)]) == Array(normalised[start..<(start + length)]) {
+                    repeats += 1
+                    next += length
+                }
+                // Three in a row is a loop. Twice is a person making a point.
+                if repeats >= 3 {
+                    cut = min(cut ?? Int.max, start)
+                    break
+                }
+                start += 1
+            }
+        }
+
+        guard let index = cut else { return text }
+        guard index >= minimumKeptWords else { return nil }
+        return pieces[0..<index].joined(separator: " ")
+    }
+
     public static func isRepetitionLoop(_ text: String, minimumWords: Int = 24) -> Bool {
         let words = text
             .lowercased()

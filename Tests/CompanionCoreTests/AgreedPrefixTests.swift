@@ -92,3 +92,54 @@ final class RepetitionLoopTests: XCTestCase {
         XCTAssertFalse(TranscriptionNoise.isRepetitionLoop(real))
     }
 }
+
+final class RepetitionTailTests: XCTestCase {
+    /// The exact shape from the panel: a real sentence, then the loop. Losing
+    /// the sentence to be rid of the tail is what made large stretches of a
+    /// call go missing.
+    func testKeepsTheSentenceInFrontOfTheLoop() {
+        let real = "She knows she'll need certain variables to store the result and count, "
+            + "and she adds some comments to outline her strategy."
+        let seen = real + " " + String(repeating: "and type, ", count: 40) + "and type"
+
+        let kept = TranscriptionNoise.withoutRepetitionTail(seen)
+
+        XCTAssertNotNil(kept)
+        XCTAssertTrue(kept!.contains("outline her strategy"))
+        XCTAssertFalse(kept!.contains("and type, and type, and type"))
+        XCTAssertLessThan(kept!.count, seen.count / 2)
+    }
+
+    /// Nothing worth keeping means nothing is shown.
+    func testDropsALoopWithNothingInFrontOfIt() {
+        XCTAssertNil(TranscriptionNoise.withoutRepetitionTail(String(repeating: "okay ", count: 40)))
+    }
+
+    /// Real speech must come through untouched.
+    func testLeavesRealSpeechWhole() {
+        let real = "The platform contains thousands of interview questions asked by top quant "
+            + "firms, coding problems, roadmaps, almost everything. We recently added a "
+            + "waveform debugger for the system."
+        XCTAssertEqual(TranscriptionNoise.withoutRepetitionTail(real), real)
+    }
+
+    /// Twice is a person making a point. Three times is the model stuck.
+    func testTwiceIsNotALoop() {
+        let emphatic = "no no it really does work like that and I have checked it twice already myself"
+        XCTAssertEqual(TranscriptionNoise.withoutRepetitionTail(emphatic), emphatic)
+    }
+
+    /// A longer repeated phrase, not just one word.
+    func testCatchesARepeatedPhrase() {
+        let seen = "so what I am saying here is that "
+            + String(repeating: "you know what I mean ", count: 6)
+        let kept = TranscriptionNoise.withoutRepetitionTail(seen)
+        XCTAssertNotNil(kept)
+        XCTAssertTrue(kept!.contains("so what I am saying here is that"))
+        XCTAssertFalse(kept!.contains("you know what I mean you know"))
+    }
+
+    func testShortTextIsLeftAlone() {
+        XCTAssertEqual(TranscriptionNoise.withoutRepetitionTail("yes yes yes"), "yes yes yes")
+    }
+}

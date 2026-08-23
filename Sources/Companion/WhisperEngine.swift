@@ -205,13 +205,24 @@ final class WhisperEngine: TranscriptionEngine {
     private func report(text: String, for window: TranscriptionWindow) {
         if !window.isClosed { previewInFlight = false }
 
-        guard !TranscriptionNoise.isRepetitionLoop(text) else {
-            // Thrown away rather than shown. A loop is not a mishearing that a
-            // reader can discount; it reads as something the other person
-            // actually said, at length.
-            SessionLog.shared.write("whisper", "\(speaker) dropped a repetition loop (\(text.count) chars)")
-            if window.isClosed { onVolatile?("", window.startSeconds) }
-            return
+        // Cut at the loop, keep what came before it.
+        //
+        // A loop almost never starts at the beginning: Whisper transcribes the
+        // window and degenerates near the end. Dropping the whole thing threw
+        // away fifteen seconds of real speech to be rid of a tail, which is
+        // what made large stretches of a call go missing.
+        var text = text
+        if TranscriptionNoise.isRepetitionLoop(text) {
+            guard let kept = TranscriptionNoise.withoutRepetitionTail(text) else {
+                SessionLog.shared.write("whisper", "\(speaker) dropped, loop with nothing before it")
+                if window.isClosed { onVolatile?("", window.startSeconds) }
+                return
+            }
+            SessionLog.shared.write(
+                "whisper",
+                "\(speaker) cut a loop: kept \(kept.count) of \(text.count) chars"
+            )
+            text = kept
         }
 
         guard !TranscriptionNoise.isFiller(text) else {
