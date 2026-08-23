@@ -36,11 +36,16 @@ public struct SuggestionDecision: Codable, Equatable, Sendable {
     public let speak: Bool
     public let kind: Kind?
     public let text: String?
+    /// Why, in a few words. Asked for only so that "decided to stay quiet" can
+    /// be diagnosed instead of guessed at — a run of silences looks identical
+    /// whether it saw a question and judged it answered, or never saw one.
+    public let because: String?
 
-    public init(speak: Bool, kind: Kind? = nil, text: String? = nil) {
+    public init(speak: Bool, kind: Kind? = nil, text: String? = nil, because: String? = nil) {
         self.speak = speak
         self.kind = kind
         self.text = text
+        self.because = because
     }
 
     /// Reads a decision out of whatever the model produced.

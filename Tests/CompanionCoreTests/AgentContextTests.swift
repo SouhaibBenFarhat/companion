@@ -129,9 +129,20 @@ final class SuggestionShapeTests: XCTestCase {
         XCTAssertTrue(prompt.contains("<call>"))
     }
 
-    /// Staying quiet is the normal case and has to be stated as one.
-    func testSilenceIsAllowed() {
-        XCTAssertTrue(AwarenessPrompt.watchingInstruction.contains("stay silent"))
-        XCTAssertTrue(AwarenessPrompt.watchingInstruction.contains("it is not a failure"))
+    /// A question went unanswered while the system prompt said silence was the
+    /// normal case and the user prompt said to answer. Two instructions, in
+    /// conflict, and the system one wins.
+    func testAnsweringAQuestionIsTheFirstJob() {
+        let instruction = AwarenessPrompt.watchingInstruction
+        XCTAssertTrue(instruction.contains("Your first job is questions"))
+        XCTAssertFalse(instruction.contains("that is the normal case"))
+    }
+
+    /// Everything it must still refuse to do.
+    func testItStillHasABar() {
+        let instruction = AwarenessPrompt.watchingInstruction
+        for forbidden in ["remark", "summarise", "greet", "agree", "about yourself"] {
+            XCTAssertTrue(instruction.contains(forbidden), forbidden)
+        }
     }
 }

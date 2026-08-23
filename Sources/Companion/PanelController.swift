@@ -395,15 +395,18 @@ final class PanelController: NSObject {
 
                 Reply with one JSON object and nothing else:
 
-                {"speak": false}
+                {"speak": false, "because": "a few words"}
 
                 or
 
-                {"speak": true, "kind": "answer|correction|fact", "text": "one sentence"}
+                {"speak": true, "kind": "answer|correction|fact", "text": "one sentence", "because": "a few words"}
 
                 A question was asked on the call and you know the answer: \
                 speak. That is what this is for, and it is the one case where \
-                staying quiet is the wrong call. The question may be split \
+                staying quiet is the wrong call. Speak even if the person who \
+                asked has started answering it themselves — the user wants your \
+                answer to hold against theirs, and by the time you are read the \
+                speaker has always moved on. The question may be split \
                 across several lines, or half-heard — "what is d-bouncing" is \
                 somebody asking what debouncing is — so read the last few lines \
                 together before deciding there was no question.
@@ -458,7 +461,10 @@ final class PanelController: NSObject {
                     return
                 }
                 guard let spoken = decision.note else {
-                    SessionLog.shared.write("suggest", "decided to stay quiet")
+                    SessionLog.shared.write(
+                        "suggest",
+                        "quiet: \(decision.because ?? "no reason given")"
+                    )
                     return
                 }
                 // The filters stay as a backstop for what slips through the
