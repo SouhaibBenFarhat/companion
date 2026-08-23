@@ -27,6 +27,11 @@ final class AwarenessCoordinator {
     var onTranscript: ((TranscriptBuffer) -> Void)?
     var onLevels: ((CallCapture.Levels) -> Void)?
     var onError: ((String) -> Void)?
+    /// A line somebody finished saying. Fired once, when it settles.
+    ///
+    /// Separate from `onTranscript`, which fires on every revision: this is the
+    /// moment a line is worth keeping.
+    var onSpokenLine: ((CaptureSpeaker, String) -> Void)?
     var onStateChanged: (() -> Void)?
     var onScreen: ((ScreenContext) -> Void)?
     /// Something worth saying happened. The caller decides what to do with it.
@@ -101,6 +106,7 @@ final class AwarenessCoordinator {
                 guard let self else { return }
                 self.transcript.appendFinal(text, speaker: speaker, at: start)
                 self.publish()
+                self.onSpokenLine?(speaker, text)
 
                 // Written as it settles, not at the end. A transcript that only
                 // reaches disk on a clean quit is one you lose on the day

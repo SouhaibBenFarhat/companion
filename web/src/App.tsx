@@ -81,6 +81,11 @@ export function App() {
         case 'openSettings':
           setShowSettings(true)
           break
+        case 'messages':
+          // A line settling mid-call. Only the messages change, so the rest of
+          // the state is left alone.
+          setState((current) => (current ? { ...current, messages: payload.messages } : current))
+          break
         case 'transcript':
           setTranscript(payload.entries)
           break

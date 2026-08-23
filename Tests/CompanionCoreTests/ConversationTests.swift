@@ -67,3 +67,31 @@ final class ConversationTests: XCTestCase {
         XCTAssertEqual(restored.agentSessionID, "sess-42")
     }
 }
+
+extension ConversationTests {
+    /// A call fills the record before anyone types, so the title has to come
+    /// from the first typed question rather than the first message.
+    func testTitleComesFromTheFirstTypedQuestion() {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .spokenByCall, text: "so what do you think about the retry limit"))
+        conversation.append(Message(role: .spokenByUser, text: "not sure yet"))
+        XCTAssertTrue(conversation.title.isEmpty)
+
+        conversation.append(Message(role: .user, text: "what is their retry limit?"))
+        XCTAssertEqual(conversation.title, Conversation.title(fromFirstMessage: "what is their retry limit?"))
+    }
+
+    /// Speech is kept, and keeps who said it.
+    func testSpokenMessagesSurviveARoundTrip() throws {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .spokenByUser, text: "I got a bit too deep into the rabbit hole."))
+        conversation.append(Message(role: .spokenByCall, text: "Right."))
+
+        let restored = try JSONDecoder().decode(
+            Conversation.self, from: JSONEncoder().encode(conversation)
+        )
+        XCTAssertEqual(restored.messages.map(\.role), [.spokenByUser, .spokenByCall])
+        XCTAssertEqual(restored.messages.first?.role.speaker, .me)
+        XCTAssertTrue(restored.messages.allSatisfy(\.role.isSpoken))
+    }
+}

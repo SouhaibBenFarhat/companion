@@ -27,6 +27,9 @@ final class PanelController: NSObject {
     /// half-message behind in the saved history.
     private var pendingAnswer = ""
     private var isReady = false
+    /// Pending conversation save, so a run of settled lines writes once.
+    private var saveWork: DispatchWorkItem?
+
     /// A screenshot to attach to the next question, taken on request.
     private var pendingScreenshot: URL?
     private var queued: [String] = []
@@ -134,10 +137,23 @@ final class PanelController: NSObject {
         awareness.onError = { [weak self] message in
             self?.send(["type": "captureError", "message": message])
         }
+        // A finished line joins the conversation, so the call is part of the
+        // record of the work rather than a stream that evaporates when you stop
+        // listening. It survives a restart, you can scroll back to it, and the
+        // agent answers about a conversation it can see.
+        awareness.onSpokenLine = { [weak self] speaker, text in
+            guard let self else { return }
+            self.current.append(Message(role: MessageRole(spokenBy: speaker), text: text))
+            self.saveConversationSoon()
+            self.sendMessages()
+        }
+
         awareness.onTranscript = { [weak self] transcript in
             self?.send([
                 "type": "transcript",
-                "entries": transcript.entries.suffix(60).map { entry in
+                // Only what is still being revised. A settled line is a message
+                // now, and sending it here as well would draw it twice.
+                "entries": transcript.entries.filter(\.isVolatile).map { entry in
                     [
                         "id": entry.id,
                         "speaker": entry.speaker.rawValue,
@@ -466,6 +482,36 @@ final class PanelController: NSObject {
     }
 
     // MARK: - State
+
+    /// Just the messages, for a line arriving mid-call.
+    ///
+    /// The full state payload asks the agent binary whether it still runs and
+    /// rebuilds every permission, every device and every conversation. A call
+    /// produces a line every few seconds, and doing all of that each time is
+    /// work nobody asked for.
+    private func sendMessages() {
+        send([
+            "type": "messages",
+            "messages": current.messages.map {
+                ["id": $0.id, "role": $0.role.rawValue, "text": $0.text]
+            },
+        ])
+    }
+
+    /// Saves the conversation soon, not on every line.
+    ///
+    /// Speech settles several times a second at times, and writing the whole
+    /// file each time is a lot of disk for a transcript nobody is reading yet.
+    /// Two seconds is short enough that a crash costs a sentence.
+    private func saveConversationSoon() {
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            try? self.conversations.save(self.current)
+        }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
 
     private func sendState() {
         let resolved = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)

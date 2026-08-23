@@ -1,4 +1,4 @@
-export type Role = 'user' | 'assistant'
+export type Role = 'user' | 'assistant' | 'spokenByUser' | 'spokenByCall'
 
 export interface Msg {
   id: string
@@ -131,6 +131,7 @@ export type Incoming =
   | { type: 'captureError'; message: string }
   | { type: 'openSettings' }
   | { type: 'transcript'; entries: TranscriptLine[] }
+  | { type: 'messages'; messages: Msg[] }
   | { type: 'screen'; app: string; detail: string }
   | { type: 'suggestion'; text: string; reason: string; at: number }
   | { type: 'screenshot'; state: 'capturing' | 'ready' | 'failed' | 'none'; name?: string; message?: string }

@@ -18,6 +18,23 @@ function Answer({ text }: { text: string }) {
 }
 
 function Bubble({ message }: { message: Msg }) {
+  // Said out loud, so it is labelled and quieter than something typed. It is
+  // the record of the call, not a turn in the chat.
+  if (message.role === 'spokenByUser' || message.role === 'spokenByCall') {
+    return (
+      <Spoken
+        line={{
+          id: message.id,
+          speaker: message.role === 'spokenByUser' ? 'me' : 'them',
+          who: message.role === 'spokenByUser' ? 'You' : 'The call',
+          text: message.text,
+          live: false,
+          at: 0,
+        }}
+      />
+    )
+  }
+
   if (message.role !== 'user') return <Answer text={message.text} />
 
   return (
