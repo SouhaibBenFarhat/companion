@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
 import { Button, Callout, LiveDot, Notice, Pulse, Surface, cx } from '../ui'
 import { send } from '../lib/bridge'
@@ -111,28 +111,20 @@ export function MessageList({
   const bottom = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
 
-  // Follow the answer as it streams in — but only while you are already at the
-  // bottom. `streaming` ticks many times a second, so without this, scrolling
-  // up to re-read something snapped you back down within a frame.
-  useEffect(() => {
-    const box = list.current
-    if (!box) return
-    const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight
-    if (distanceFromBottom > NEAR_BOTTOM) return
-    bottom.current?.scrollIntoView({ block: 'end' })
-  }, [messages.length, streaming, busy, error, transcript.length, suggestions.length])
-
-  const empty =
-    messages.length === 0 && !streaming && !busy && transcript.length === 0 && suggestions.length === 0
-
   // Lines and notes share one order, because a note is about the words around
   // it. Pinned above the transcript it read as being about the start of the
   // call rather than about the sentence that prompted it.
   const timeline = [
-    ...transcript.map((line) => ({ at: line.at, key: line.id, node: <Spoken line={line} /> })),
+    ...transcript.map((line) => ({
+      at: line.at,
+      key: line.id,
+      text: line.text,
+      node: <Spoken line={line} />,
+    })),
     ...suggestions.map((one) => ({
       at: one.at,
       key: one.id,
+      text: one.text,
       node: (
         <Callout
           title="Noticed"
@@ -148,8 +140,41 @@ export function MessageList({
     })),
   ].sort((one, two) => one.at - two.at)
 
+  // Whether to keep following. Recorded when YOU scroll, never when new
+  // content arrives.
+  //
+  // Measuring the distance inside the effect was wrong: by the time it runs,
+  // the new bubble has already been laid out and pushed everything up, so the
+  // distance is large and it concluded you had scrolled away — on every single
+  // line. Following stopped the moment the call got going.
+  const following = useRef(true)
+
+  // Every content change, including the live line being revised in place —
+  // hence the text, not just the count.
+  const tail = timeline.at(-1)
+  const signature = `${messages.length}:${streaming.length}:${busy}:${error}:${suggestions.length}:${timeline.length}:${tail?.text ?? ''}`
+
+  useLayoutEffect(() => {
+    if (!following.current) return
+    // Instant, not smooth: a call produces a line every few seconds, and
+    // animations queue up behind each other until the panel is visibly behind.
+    bottom.current?.scrollIntoView({ block: 'end' })
+  }, [signature])
+
+  const empty =
+    messages.length === 0 && !streaming && !busy && transcript.length === 0 && suggestions.length === 0
+
+
+
   return (
-    <div ref={list} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
+    <div
+      ref={list}
+      onScroll={(event) => {
+        const box = event.currentTarget
+        following.current = box.scrollHeight - box.scrollTop - box.clientHeight <= NEAR_BOTTOM
+      }}
+      className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3"
+    >
       {!agentFound && (
         <Notice tone="danger">
           {agentTitle} was not found. Install it, or set the path in Settings. Companion drives the
