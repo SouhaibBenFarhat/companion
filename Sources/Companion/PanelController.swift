@@ -347,24 +347,28 @@ final class PanelController: NSObject {
         let spoken = awareness.transcript.text(lastSeconds: 120)
         let screen = awareness.screenContext?.summary ?? ""
         let prompt = AwarenessPrompt.build(
-            // An instruction, not a line of dialogue.
-            //
-            // This used to hand over only the last thing said, in quotes, on
-            // top of a transcript. The model read that as a script to continue
-            // and wrote the next turn of the conversation — "Human: what's the
-            // name of the platform he is describing?" — a question addressed to
-            // nobody, in a voice that was not its own.
             question: """
-                Decide whether to say something to the user right now. \
-                The last thing said on the call was: "\(line)"
-
-                Answer with the thing the user should know, in one sentence, \
-                addressed to them. If there is nothing worth interrupting for, \
-                answer with nothing at all. Never continue the conversation, \
-                never write a line of dialogue, and never label a speaker.
+                Given all of that: is there anything the user needs to know \
+                right now? The last thing said was: "\(line)"
                 """,
             conversation: spoken,
-            screen: screen
+            screen: screen,
+            // Ahead of the transcript, because the transcript is a labelled
+            // script and a script asks to be continued. Underneath it, this
+            // was ignored and the panel filled with lines of dialogue.
+            instruction: """
+                You are writing a private note to one person: the user of this \
+                app. Nobody on the call can see it.
+
+                Below is a transcript of a call they are on. It is material to \
+                read, not a conversation to take part in. Never continue it, \
+                never write a line of dialogue, and never begin with a speaker \
+                label of any kind.
+
+                Reply with one sentence telling the user something they can act \
+                on in the next few seconds and would otherwise miss. If there is \
+                nothing, reply with nothing at all — that is the normal case.
+                """
         )
 
         let command = AgentCommandBuilder.build(
@@ -392,7 +396,12 @@ final class PanelController: NSObject {
             },
             onFinish: { [weak self] _, _ in
                 guard let self else { return }
-                let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                // A line of dialogue never reaches the panel, whatever the
+                // prompt asked for.
+                guard let text = SuggestionCleaner.clean(answer) else {
+                    SessionLog.shared.write("suggest", "dropped, model wrote dialogue")
+                    return
+                }
                 guard self.awareness.admitSuggestion(text) else { return }
                 // Kept only if the user allows the transcript to be stored.
                 // Otherwise it is shown and forgotten, which is what "do not

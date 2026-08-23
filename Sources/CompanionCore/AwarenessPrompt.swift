@@ -19,9 +19,19 @@ public enum AwarenessPrompt {
     public static func build(
         question: String,
         conversation: String = "",
-        screen: String = ""
+        screen: String = "",
+        instruction: String = ""
     ) -> String {
         var parts: [String] = []
+
+        // First, before the transcript.
+        //
+        // The transcript is a labelled script, and a script is a strong
+        // pattern to follow. An instruction underneath it competes with
+        // everything above; an instruction above it frames what follows as
+        // material rather than as a scene to continue.
+        let leadIn = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !leadIn.isEmpty { parts.append(leadIn) }
 
         let spokenText = conversation.trimmingCharacters(in: .whitespacesAndNewlines)
         if !spokenText.isEmpty {
