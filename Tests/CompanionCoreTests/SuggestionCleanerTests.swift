@@ -37,6 +37,31 @@ final class SuggestionCleanerTests: XCTestCase {
         XCTAssertNil(SuggestionCleaner.clean(script))
     }
 
+    /// Straight from the panel: the model repeating what it was given.
+    func testRejectsThePromptReadBack() {
+        XCTAssertNil(SuggestionCleaner.clean("""
+            <screen> App: Claude Window: Claude </screen>
+            The last thing said was: "I found with even Opus 5 extra high, there's a high chance"
+            """))
+        XCTAssertNil(SuggestionCleaner.clean("<call>they said something</call>"))
+    }
+
+    /// Also from the panel: the model reacting rather than helping. The bar for
+    /// interrupting a live call is that the user can act on it.
+    func testRejectsTheModelThinkingOutLoud() {
+        XCTAssertNil(SuggestionCleaner.clean("""
+            What's even "Fable 5" here lol
+            I'm confused about what the speaker's using. I'm listening but none of the names make sense
+            """))
+        XCTAssertNil(SuggestionCleaner.clean("I don't have enough context to help here."))
+    }
+
+    /// A note may still be about the user, and may still use the word "I".
+    func testKeepsANoteThatHappensToSayI() {
+        let note = "I'd check their retry limit — the docs they are quoting were replaced in June."
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
     // MARK: - What must survive
 
     func testKeepsAnOrdinaryNote() {

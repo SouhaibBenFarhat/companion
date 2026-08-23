@@ -384,6 +384,13 @@ final class PanelController: NSObject {
                 Reply with one sentence telling the user something they can act \
                 on in the next few seconds and would otherwise miss. If there is \
                 nothing, reply with nothing at all — that is the normal case.
+
+                Your reply is shown to the user word for word, in a small box, \
+                while they are talking to somebody. So: no preamble, no quoting \
+                anything back, no repeating the transcript or anything in angle \
+                brackets, and nothing about yourself or about what you can or \
+                cannot tell. If you are unsure, that is a reason to say nothing, \
+                not a thing to say.
                 """
         )
 

@@ -21,6 +21,23 @@ public enum SuggestionCleaner {
         "you:", "the call:", "me:", "them:", "speaker:", "system:",
     ]
 
+    /// Words that only exist in the prompt, never in an answer to it.
+    static let promptMarkers = [
+        "<screen>", "</screen>", "<call>", "</call>",
+        "the last thing said was",
+        "is there anything the user needs to know",
+    ]
+
+    /// The model reacting instead of helping. Every one of these is the
+    /// assistant talking about its own state, which is never actionable.
+    static let selfCommentary = [
+        "i'm confused", "i am confused",
+        "i'm listening", "i am listening",
+        "i'm not sure what", "i am not sure what",
+        "none of the names make sense",
+        "i don't have enough context", "i do not have enough context",
+    ]
+
     /// The note to show, or nil when the model wrote dialogue instead.
     public static func clean(_ text: String) -> String? {
         var working = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -43,6 +60,27 @@ public enum SuggestionCleaner {
         }
 
         guard !working.isEmpty else { return nil }
+
+        // The prompt read back to you.
+        //
+        // The panel showed "<screen> App: Claude Window: Claude </screen>"
+        // followed by "The last thing said was: ..." — the model repeating what
+        // it was given instead of answering it. None of these words can appear
+        // in a note about a call, so their presence anywhere is enough.
+        let lowered = working.lowercased()
+        for echo in promptMarkers where lowered.contains(echo) {
+            return nil
+        }
+
+        // The model thinking out loud.
+        //
+        // "What's even "Fable 5" here lol / I'm confused about what the
+        // speaker's using. I'm listening but none of the names make sense."
+        // That is a reaction, not something the user can act on, and the whole
+        // bar for interrupting a live call is that it can be acted on.
+        for aside in selfCommentary where lowered.contains(aside) {
+            return nil
+        }
 
         // More than one labelled turn is a script, and no amount of stripping
         // makes it a note.
