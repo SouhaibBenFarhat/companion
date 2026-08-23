@@ -42,6 +42,14 @@ public enum AgentPermission: String, Codable, CaseIterable, Sendable {
     /// panel set to "Read only" created a file in the user's home folder with
     /// `echo > file`.
     case readOnly
+    /// No tools at all. Reads the prompt, answers, stops.
+    ///
+    /// For the unprompted note, which reacts to a transcript it has already
+    /// been handed and has no business touching the disk. Left with reading
+    /// tools and no chosen folder, it ran in the user's home directory and went
+    /// looking: a note came back quoting a file on their Desktop and a
+    /// conversation from another app entirely.
+    case noTools
     /// Full power inside the working folder, and never a prompt.
     ///
     /// Deliberately armed: the panel asks twice before turning it on. An
@@ -51,6 +59,7 @@ public enum AgentPermission: String, Codable, CaseIterable, Sendable {
 
     public var title: String {
         switch self {
+        case .noTools: return "No tools"
         case .readOnly: return "Read only"
         case .acceptEdits: return "Allow edits"
         }
@@ -156,6 +165,10 @@ public enum AgentCommandBuilder {
         }
 
         switch permission {
+        case .noTools:
+            // Empty string, which is how the CLI is told to disable every tool.
+            arguments += ["--tools", ""]
+
         case .readOnly:
             // The tools it HAS, not the tools it may not use. Denying the write
             // tools left `Bash` available, which writes perfectly well — that
@@ -194,6 +207,12 @@ public enum AgentCommandBuilder {
         arguments += ["--json", "--cd", workingDirectory.path]
 
         switch permission {
+        case .noTools:
+            // Codex has no flag for "no tools", so this is the tightest it
+            // offers. The note is still handed everything it needs in the
+            // prompt and has no reason to reach for anything.
+            arguments += ["--sandbox", "read-only"]
+
         case .readOnly:
             arguments += ["--sandbox", "read-only"]
         case .acceptEdits:

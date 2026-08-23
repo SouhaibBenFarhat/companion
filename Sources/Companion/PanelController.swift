@@ -406,7 +406,10 @@ final class PanelController: NSObject {
                 isListening: true,
                 watching: AwarenessPrompt.watchingInstruction
             ),
-            permission: .readOnly
+            // Nothing. It is reacting to a transcript it has already been
+            // given, and it runs in the user's home folder when no project has
+            // been chosen — where reading tools mean reading anything.
+            permission: .noTools
         )
 
         var answer = ""

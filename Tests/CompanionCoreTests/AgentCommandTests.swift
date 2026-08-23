@@ -119,9 +119,10 @@ final class AgentCommandTests: XCTestCase {
         for permission in AgentPermission.allCases {
             let arguments = build(permission: permission).arguments
             XCTAssertFalse(arguments.contains("default"), "\(permission) would prompt")
-            if permission == .readOnly {
-                XCTAssertTrue(arguments.contains("--tools"))
-            } else {
+            switch permission {
+            case .readOnly, .noTools:
+                XCTAssertTrue(arguments.contains("--tools"), "\(permission)")
+            case .acceptEdits:
                 XCTAssertTrue(arguments.contains("bypassPermissions"))
             }
         }
@@ -178,5 +179,32 @@ final class AgentCommandTests: XCTestCase {
     func testDefaultSystemPromptAsksForShortAnswers() {
         XCTAssertTrue(DefaultSystemPrompt.text.contains("Lead with the answer"))
         XCTAssertFalse(DefaultSystemPrompt.text.isEmpty)
+    }
+
+    // MARK: - The unprompted note
+
+    /// It reacts to a transcript it was already handed. Left with reading tools
+    /// and no chosen folder it ran in the user's home directory and went
+    /// looking — a note came back quoting a file on their Desktop and a
+    /// conversation from a different app.
+    func testTheUnpromptedNoteGetsNoToolsAtAll() throws {
+        let arguments = build(permission: .noTools).arguments
+        let index = try XCTUnwrap(arguments.firstIndex(of: "--tools"))
+        XCTAssertEqual(arguments[index + 1], "", "an empty list is how every tool is disabled")
+        XCTAssertFalse(arguments.contains("bypassPermissions"))
+    }
+
+    func testCodexGetsNoWritesForTheUnpromptedNote() {
+        let arguments = build(kind: .codex, permission: .noTools).arguments
+        let index = arguments.firstIndex(of: "--sandbox")
+        XCTAssertEqual(arguments[index! + 1], "read-only")
+        XCTAssertFalse(arguments.contains("--dangerously-bypass-approvals-and-sandbox"))
+    }
+
+    /// Still true with a third case: no mode may raise a prompt with nowhere
+    /// to go.
+    func testNoToolsCannotPromptEither() {
+        let arguments = build(permission: .noTools).arguments
+        XCTAssertFalse(arguments.contains("default"))
     }
 }

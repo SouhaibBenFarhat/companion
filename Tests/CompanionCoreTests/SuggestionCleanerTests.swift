@@ -62,6 +62,27 @@ final class SuggestionCleanerTests: XCTestCase {
         XCTAssertEqual(SuggestionCleaner.clean(note), note)
     }
 
+    /// True, well written, and worthless: the speaker had just said it.
+    func testRejectsAgreeingWithTheCall() {
+        XCTAssertNil(SuggestionCleaner.clean(
+            "The speaker is correct — closures capture live references, not copies."
+        ))
+        XCTAssertNil(SuggestionCleaner.clean("That's correct, and it also works for let bindings."))
+        XCTAssertNil(SuggestionCleaner.clean("Good point — the retry limit is documented."))
+    }
+
+    /// Contradicting the call is the whole reason this feature exists.
+    func testKeepsANoteThatContradictsTheCall() {
+        let note = "Their retry limit is 3, not 5 — the page they are quoting was replaced in June."
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
+    /// The word "correct" in the middle of a real note is not agreement.
+    func testKeepsANoteThatMerelyUsesTheWord() {
+        let note = "The correct flag is --tools, not --allowedTools, on this version."
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
     // MARK: - What must survive
 
     func testKeepsAnOrdinaryNote() {

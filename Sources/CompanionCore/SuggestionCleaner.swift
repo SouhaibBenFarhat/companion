@@ -38,6 +38,25 @@ public enum SuggestionCleaner {
         "i don't have enough context", "i do not have enough context",
     ]
 
+    /// Agreeing with what was just said.
+    ///
+    /// "The speaker is correct — closures capture live references, not copies"
+    /// is true, well written, and worthless: the speaker had just said it, so
+    /// there is nothing in it the user did not already have. The instruction
+    /// says never to comment on what is happening, and a model will not hold
+    /// that line on wording alone.
+    ///
+    /// A note that contradicts the call is the opposite and is exactly what
+    /// this feature is for, so only agreement is caught.
+    static let agreement = [
+        "the speaker is correct", "the speaker is right",
+        "that's correct", "that is correct",
+        "he's right", "he is right", "she's right", "she is right",
+        "they're right", "they are right",
+        "correct —", "correct -",
+        "good point", "exactly right",
+    ]
+
     /// The note to show, or nil when the model wrote dialogue instead.
     public static func clean(_ text: String) -> String? {
         var working = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -79,6 +98,11 @@ public enum SuggestionCleaner {
         // That is a reaction, not something the user can act on, and the whole
         // bar for interrupting a live call is that it can be acted on.
         for aside in selfCommentary where lowered.contains(aside) {
+            return nil
+        }
+
+        // Agreeing with the call adds nothing the user did not just hear.
+        for nod in agreement where lowered.hasPrefix(nod) || lowered.contains(". \(nod)") {
             return nil
         }
 
