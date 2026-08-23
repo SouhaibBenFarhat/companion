@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
 import { Button, Callout, LiveDot, Notice, Pulse, Surface, cx } from '../ui'
 import { send } from '../lib/bridge'
-import type { Msg, Suggestion, TranscriptLine } from '../lib/types'
+import type { Msg, TranscriptLine } from '../lib/types'
 
 /** Within this far of the end still counts as "following along". */
 const NEAR_BOTTOM = 60
@@ -18,6 +18,26 @@ function Answer({ text }: { text: string }) {
 }
 
 function Bubble({ message }: { message: Msg }) {
+  if (message.role === 'noticed') {
+    return (
+      <Callout
+        title="Noticed"
+        action={
+          <Button
+            variant="ghost"
+            size="xs"
+            tight
+            onClick={() => send({ type: 'dismissMessage', id: message.id })}
+          >
+            Dismiss
+          </Button>
+        }
+      >
+        <Markdown text={message.text} />
+      </Callout>
+    )
+  }
+
   // Said out loud, so it is labelled and quieter than something typed. It is
   // the record of the call, not a turn in the chat.
   if (message.role === 'spokenByUser' || message.role === 'spokenByCall') {
@@ -108,9 +128,7 @@ export function MessageList({
   errorCode,
   agentFound,
   agentTitle,
-  suggestions,
   transcript,
-  onDismissSuggestion,
 }: {
   messages: Msg[]
   streaming: string
@@ -120,42 +138,15 @@ export function MessageList({
   errorCode: string
   agentFound: boolean
   agentTitle: string
-  suggestions: Suggestion[]
   /** What is being heard right now. Empty unless listening. */
   transcript: TranscriptLine[]
-  onDismissSuggestion: (id: string) => void
 }) {
   const bottom = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
 
-  // Lines and notes share one order, because a note is about the words around
-  // it. Pinned above the transcript it read as being about the start of the
-  // call rather than about the sentence that prompted it.
-  const timeline = [
-    ...transcript.map((line) => ({
-      at: line.at,
-      key: line.id,
-      text: line.text,
-      node: <Spoken line={line} />,
-    })),
-    ...suggestions.map((one) => ({
-      at: one.at,
-      key: one.id,
-      text: one.text,
-      node: (
-        <Callout
-          title="Noticed"
-          action={
-            <Button variant="ghost" size="xs" tight onClick={() => onDismissSuggestion(one.id)}>
-              Dismiss
-            </Button>
-          }
-        >
-          <Markdown text={one.text} />
-        </Callout>
-      ),
-    })),
-  ].sort((one, two) => one.at - two.at)
+  // The live line only. Everything settled is a message, including a note,
+  // so it already sits where it happened.
+  const timeline = transcript
 
   // Whether to keep following. Recorded when YOU scroll, never when new
   // content arrives.
@@ -169,7 +160,7 @@ export function MessageList({
   // Every content change, including the live line being revised in place —
   // hence the text, not just the count.
   const tail = timeline.at(-1)
-  const signature = `${messages.length}:${streaming.length}:${busy}:${error}:${suggestions.length}:${timeline.length}:${tail?.text ?? ''}`
+  const signature = `${messages.length}:${streaming.length}:${busy}:${error}:${timeline.length}:${tail?.text ?? ''}`
 
   useLayoutEffect(() => {
     if (!following.current) return
@@ -179,7 +170,7 @@ export function MessageList({
   }, [signature])
 
   const empty =
-    messages.length === 0 && !streaming && !busy && transcript.length === 0 && suggestions.length === 0
+    messages.length === 0 && !streaming && !busy && transcript.length === 0
 
 
 
@@ -210,8 +201,8 @@ export function MessageList({
       ))}
 
       {/* After the messages, because it is happening now. */}
-      {timeline.map((item) => (
-        <div key={item.key}>{item.node}</div>
+      {timeline.map((line) => (
+        <Spoken key={line.id} line={line} />
       ))}
 
       {streaming && <Answer text={streaming} />}

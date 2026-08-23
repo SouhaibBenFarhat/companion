@@ -13,6 +13,12 @@ public enum MessageRole: String, Codable, Sendable {
     case spokenByUser
     /// Something said out loud by the person on the other end.
     case spokenByCall
+    /// Something Companion said without being asked.
+    ///
+    /// A message like any other, so it lands where it happened. Kept in its own
+    /// list beside the conversation, it could only ever be drawn after every
+    /// line — including the lines it was about.
+    case noticed
 
     /// Whether this was said aloud rather than typed.
     public var isSpoken: Bool { self == .spokenByUser || self == .spokenByCall }
@@ -26,7 +32,7 @@ public enum MessageRole: String, Codable, Sendable {
         switch self {
         case .spokenByUser: return .me
         case .spokenByCall: return .them
-        case .user, .assistant: return nil
+        case .user, .assistant, .noticed: return nil
         }
     }
 }
@@ -110,5 +116,11 @@ public struct Conversation: Codable, Equatable, Identifiable, Sendable {
         }
         messages.append(message)
         updatedAt = message.createdAt
+    }
+
+    /// Takes one message out. Used by Dismiss on an unprompted note.
+    public mutating func remove(id: String) {
+        messages.removeAll { $0.id == id }
+        updatedAt = Date()
     }
 }

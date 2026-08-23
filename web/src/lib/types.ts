@@ -1,4 +1,4 @@
-export type Role = 'user' | 'assistant' | 'spokenByUser' | 'spokenByCall'
+export type Role = 'user' | 'assistant' | 'spokenByUser' | 'spokenByCall' | 'noticed'
 
 export interface Msg {
   id: string
@@ -89,14 +89,6 @@ export interface TranscriptLine {
   at: number
 }
 
-export interface Suggestion {
-  id: string
-  text: string
-  reason: string
-  /** Seconds into the call, so it sits with the lines it was about. */
-  at: number
-}
-
 export interface InputDevice {
   uid: string
   name: string
@@ -133,7 +125,6 @@ export type Incoming =
   | { type: 'transcript'; entries: TranscriptLine[] }
   | { type: 'messages'; messages: Msg[] }
   | { type: 'screen'; app: string; detail: string }
-  | { type: 'suggestion'; text: string; reason: string; at: number }
   | { type: 'screenshot'; state: 'capturing' | 'ready' | 'failed' | 'none'; name?: string; message?: string }
 
 /** Everything the page can ask Swift to do. */
@@ -147,6 +138,7 @@ export type Outgoing =
   | { type: 'deleteConversation'; id: string }
   | { type: 'pickRepository' }
   | { type: 'signIn' }
+  | { type: 'dismissMessage'; id: string }
   | { type: 'openLink'; url: string }
   | { type: 'requestPermission'; id: PermissionId }
   | { type: 'openPermissionSettings'; id: PermissionId }

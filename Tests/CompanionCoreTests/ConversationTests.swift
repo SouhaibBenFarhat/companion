@@ -95,3 +95,44 @@ extension ConversationTests {
         XCTAssertTrue(restored.messages.allSatisfy(\.role.isSpoken))
     }
 }
+
+extension ConversationTests {
+    /// A note has to land after the line that prompted it. Held in its own
+    /// list, it could only ever be drawn after every line — including the ones
+    /// it was about.
+    func testANoteSitsWhereItHappened() {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .spokenByCall, text: "closures capture by reference"))
+        conversation.append(Message(role: .noticed, text: "They mean by value for primitives."))
+        conversation.append(Message(role: .spokenByCall, text: "so same input, same output"))
+
+        XCTAssertEqual(
+            conversation.messages.map(\.role),
+            [.spokenByCall, .noticed, .spokenByCall]
+        )
+    }
+
+    func testDismissingANoteRemovesIt() {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .spokenByCall, text: "keep me"))
+        let note = Message(role: .noticed, text: "dismiss me")
+        conversation.append(note)
+
+        conversation.remove(id: note.id)
+
+        XCTAssertEqual(conversation.messages.map(\.text), ["keep me"])
+    }
+
+    func testRemovingSomethingThatIsNotThereChangesNothing() {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .user, text: "hello"))
+        conversation.remove(id: "not-a-real-id")
+        XCTAssertEqual(conversation.messages.count, 1)
+    }
+
+    /// A note is not speech, and must not claim a speaker.
+    func testANoteHasNoSpeaker() {
+        XCTAssertNil(MessageRole.noticed.speaker)
+        XCTAssertFalse(MessageRole.noticed.isSpoken)
+    }
+}

@@ -464,22 +464,13 @@ final class PanelController: NSObject {
                 self.notesAlreadyGiven.append(text)
                 if self.notesAlreadyGiven.count > 6 { self.notesAlreadyGiven.removeFirst() }
                 guard self.awareness.admitSuggestion(text) else { return }
-                // Kept only if the user allows the transcript to be stored.
-                // Otherwise it is shown and forgotten, which is what "do not
-                // persist" has to mean or the setting is decoration.
-                if self.settings.awareness.persistTranscript {
-                    self.current.append(Message(role: .assistant, text: text))
-                    try? self.conversations.save(self.current)
-                }
-                self.send([
-                    "type": "suggestion",
-                    "text": text,
-                    "reason": reason.rawValue,
-                    // The moment it is about: the end of the transcript it was
-                    // given. A note pinned above the whole conversation reads
-                    // as being about the beginning of it.
-                    "at": self.awareness.transcript.lastEntry?.startSeconds ?? 0,
-                ])
+
+                // A message, so it sits where it happened. In its own list it
+                // could only ever be drawn after every line, including the
+                // lines it was about.
+                self.current.append(Message(role: .noticed, text: text))
+                self.saveConversationSoon()
+                self.sendMessages()
             }
         )
     }
@@ -880,6 +871,12 @@ extension PanelController: WKScriptMessageHandler {
             NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
                 DispatchQueue.main.async { NSApp.terminate(nil) }
             }
+
+        case "dismissMessage":
+            guard let id = body["id"] as? String else { return }
+            current.remove(id: id)
+            saveConversationSoon()
+            sendMessages()
 
         case "refreshPermissions":
             // Cheap, and the only way to notice a grant made in System Settings

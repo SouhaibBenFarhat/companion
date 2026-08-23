@@ -7,7 +7,7 @@ import { AwarenessBar } from './components/AwarenessBar'
 import { ComposerControls } from './components/ComposerControls'
 import { listen, send } from './lib/bridge'
 import { useTypewriter } from './lib/useTypewriter'
-import type { StatePayload, Suggestion, TranscriptLine } from './lib/types'
+import type { StatePayload, TranscriptLine } from './lib/types'
 
 export function App() {
   const [state, setState] = useState<StatePayload | null>(null)
@@ -29,7 +29,6 @@ export function App() {
   const [captureError, setCaptureError] = useState('')
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [screen, setScreen] = useState('')
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [screenshot, setScreenshot] = useState<'capturing' | 'ready' | 'failed' | 'none'>('none')
 
   useEffect(() => {
@@ -91,14 +90,6 @@ export function App() {
           break
         case 'screen':
           setScreen([payload.app, payload.detail].filter(Boolean).join(' · '))
-          break
-        case 'suggestion':
-          // Kept, not replaced. Each note belongs to the moment it was about,
-          // and a call produces several.
-          setSuggestions((all) => [
-            ...all,
-            { id: `noticed-${payload.at}-${all.length}`, text: payload.text, reason: payload.reason, at: payload.at },
-          ])
           break
         case 'screenshot':
           setScreenshot(payload.state)
@@ -183,9 +174,7 @@ export function App() {
             errorCode={errorCode}
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
-            suggestions={suggestions}
             transcript={transcript}
-            onDismissSuggestion={(id) => setSuggestions((all) => all.filter((one) => one.id !== id))}
           />
           <Composer
             busy={busy}
