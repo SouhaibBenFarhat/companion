@@ -401,17 +401,23 @@ final class PanelController: NSObject {
 
                 {"speak": true, "kind": "answer|correction|fact", "text": "one sentence"}
 
-                Use "answer" only when somebody on the call asked a question \
-                that this answers. Use "correction" only when something said is \
-                wrong and you can say what is true instead. Use "fact" only for \
-                something they are missing and would want — a limit, a version, \
-                a name, a number.
+                A question was asked on the call and you know the answer: \
+                speak. That is what this is for, and it is the one case where \
+                staying quiet is the wrong call. The question may be split \
+                across several lines, or half-heard — "what is d-bouncing" is \
+                somebody asking what debouncing is — so read the last few lines \
+                together before deciding there was no question.
 
-                {"speak": false} is the right answer almost every time. Choose \
-                it for anything that is a remark, a summary, agreement, an \
-                explanation of something already explained, or anything about \
-                you rather than about their work. If you are unsure, it is \
-                false.
+                Something said is wrong and you can say what is true instead: \
+                speak, with "correction".
+
+                They are missing a fact they would want — a limit, a version, a \
+                name, a number: speak, with "fact".
+
+                Anything else is {"speak": false}: a remark, a summary, \
+                agreement with what was just said, an explanation of something \
+                the speaker already explained correctly, or anything about you \
+                rather than about their work.
 
                 \(recentNotes)
                 """
@@ -463,7 +469,10 @@ final class PanelController: NSObject {
                 }
                 self.notesAlreadyGiven.append(text)
                 if self.notesAlreadyGiven.count > 6 { self.notesAlreadyGiven.removeFirst() }
-                guard self.awareness.admitSuggestion(text) else { return }
+                guard self.awareness.admitSuggestion(
+                    text,
+                    answersAQuestion: decision.kind == .answer
+                ) else { return }
 
                 // A message, so it sits where it happened. In its own list it
                 // could only ever be drawn after every line, including the

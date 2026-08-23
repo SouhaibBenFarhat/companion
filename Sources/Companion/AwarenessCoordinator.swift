@@ -194,9 +194,11 @@ final class AwarenessCoordinator {
     /// The trigger decided something happened. This decides whether saying so
     /// is worth interrupting a live conversation for, which is the harder
     /// question and the one that decides whether the feature survives.
-    func admitSuggestion(_ text: String) -> Bool {
+    func admitSuggestion(_ text: String, answersAQuestion: Bool = false) -> Bool {
         let now = Date().timeIntervalSinceReferenceDate
-        let decision = gate.admit(text, at: now, state: &gateState)
+        let decision = gate.admit(
+            text, at: now, answersAQuestion: answersAQuestion, state: &gateState
+        )
         if decision != .show {
             SessionLog.shared.write("suggest", "held back: \(decision)")
         }
