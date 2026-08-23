@@ -46,6 +46,29 @@ public enum SentenceSplitter {
         return sentences
     }
 
+    /// The finished sentences in a growing buffer, and what is left over.
+    ///
+    /// Words settle a few at a time — that is what makes the transcript keep up
+    /// with the call — but a few words are not a line. Emitted as they arrived,
+    /// one sentence became five bubbles: "I got a bit too deep", "reality.",
+    /// "into the rabbit hole."
+    ///
+    /// So settled words are collected here and only become a line when the
+    /// sentence they belong to ends. The live line above them shows the words
+    /// in the meantime, so nothing is hidden while it waits.
+    public static func complete(in buffer: String) -> (sentences: [String], remainder: String) {
+        let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return ([], "") }
+
+        let pieces = split(trimmed)
+        guard let last = pieces.last else { return ([], "") }
+
+        // The last piece is only finished if the buffer itself ends in a stop.
+        let ends = last.hasSuffix(".") || last.hasSuffix("?") || last.hasSuffix("!")
+        if ends { return (pieces, "") }
+        return (Array(pieces.dropLast()), last)
+    }
+
     /// Where each sentence starts, spread across the window it came from.
     ///
     /// By length, because a long sentence took longer to say. Approximate on

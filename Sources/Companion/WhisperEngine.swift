@@ -45,6 +45,14 @@ final class WhisperEngine: TranscriptionEngine {
     private var agreement = LocalAgreement()
     /// Where the words being settled mid-window belong in the call.
     private var pendingStart: TimeInterval = 0
+    /// The language the model was told to expect, for judging a line that
+    /// comes back in another script.
+    private var language: String?
+    /// Settled words waiting for their sentence to end.
+    ///
+    /// Words settle a few at a time, which is what keeps the transcript up with
+    /// the call. Shown as they arrive, one sentence became five bubbles.
+    private var sentenceBuffer = ""
 
     /// Whisper wants 16 kHz mono Float32. `WhisperKit.sampleRate` is 16000, and
     /// `transcribe(audioArray:)` is documented "Array of 16khz raw float audio
@@ -74,6 +82,7 @@ final class WhisperEngine: TranscriptionEngine {
 
     func start(locale: Locale) async {
         let language = locale.language.languageCode?.identifier ?? "en"
+        self.language = language
         do {
             let folder = try await WhisperModelStore.shared.folder(for: variant)
             try await pipeline.load(folder: folder, language: language)
@@ -215,6 +224,14 @@ final class WhisperEngine: TranscriptionEngine {
         // away fifteen seconds of real speech to be rid of a tail, which is
         // what made large stretches of a call go missing.
         var text = text
+
+        if TranscriptionNoise.isForeignScript(text, expecting: language) {
+            // Whisper is told the language and still returns the odd line in
+            // another one, on a window it could not make sense of.
+            SessionLog.shared.write("whisper", "\(speaker) dropped a line in another script")
+            return
+        }
+
         if TranscriptionNoise.isRepetitionLoop(text) {
             guard let kept = TranscriptionNoise.withoutRepetitionTail(text) else {
                 SessionLog.shared.write("whisper", "\(speaker) dropped, loop with nothing before it")
@@ -245,7 +262,10 @@ final class WhisperEngine: TranscriptionEngine {
         if window.isClosed {
             // Whatever has not settled yet settles now: there will be no
             // further pass to agree with.
-            let rest = agreement.finish(text)
+            let rest = [sentenceBuffer, agreement.finish(text)]
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            sentenceBuffer = ""
             pendingStart = 0
             onVolatile?("", window.startSeconds)
             guard !rest.isEmpty else { return }
@@ -275,16 +295,29 @@ final class WhisperEngine: TranscriptionEngine {
         let step = agreement.offer(text)
 
         if !step.settled.isEmpty {
-            let at = max(pendingStart, window.startSeconds)
-            for sentence in SentenceSplitter.split(step.settled) {
+            sentenceBuffer = sentenceBuffer.isEmpty
+                ? step.settled
+                : sentenceBuffer + " " + step.settled
+
+            // A line appears when its sentence ends, not when a handful of
+            // words happen to settle. The live line below shows those words in
+            // the meantime, so nothing is hidden while it waits.
+            let (sentences, remainder) = SentenceSplitter.complete(in: sentenceBuffer)
+            sentenceBuffer = remainder
+
+            for sentence in sentences {
+                let at = max(pendingStart, window.startSeconds)
                 onFinal?(sentence, at)
+                pendingStart = at + 0.001
             }
-            // The next settled words come after these, so they sort after them.
-            pendingStart = at + 0.001
         }
 
-        // The tail, still being revised, stays faded until it settles.
-        onVolatile?(step.pending, max(pendingStart, window.startSeconds))
+        // Everything not yet on a line: the settled words still waiting for
+        // their full stop, plus the tail being revised.
+        let live = [sentenceBuffer, step.pending]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        onVolatile?(live, max(pendingStart, window.startSeconds))
     }
 
     @MainActor

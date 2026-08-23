@@ -238,6 +238,27 @@ public enum TranscriptionNoise {
         return filler.contains(bare)
     }
 
+    /// Whether the text is in a script the call is not being held in.
+    ///
+    /// Whisper is told the language and still returns the odd line in another
+    /// one — "全世界的" appeared in the middle of an English call. It is a
+    /// hallucination on a window it could not make sense of, and it is
+    /// unmistakable: real English speech does not come back in Han characters.
+    ///
+    /// Only used when a language was chosen. On automatic detection this would
+    /// throw away exactly the text it exists to support.
+    public static func isForeignScript(_ text: String, expecting language: String?) -> Bool {
+        guard let language, language.hasPrefix("en") else { return false }
+
+        let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+        guard !letters.isEmpty else { return false }
+
+        let latin = letters.filter { $0.value < 0x0250 }
+        // A stray accented word or a name is fine. A line that is mostly not
+        // Latin is not English being transcribed.
+        return Double(latin.count) / Double(letters.count) < 0.5
+    }
+
     /// Whether the recogniser fell into a loop.
     ///
     /// Whisper's worst failure is not mishearing a word, it is repeating one:
