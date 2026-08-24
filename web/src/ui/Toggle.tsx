@@ -1,9 +1,19 @@
-import { cx, focusRing } from './styles'
+import { useId } from 'react'
+import { cx } from './variants'
 
-/// A switch for something that is either on or off.
-///
-/// A checkbox reads as "tick this to agree". A switch reads as "this is
-/// running", which is what a capture setting actually is.
+/**
+ * A switch.
+ *
+ * A checkbox reads as "tick this to agree". A switch reads as "this is
+ * running", which is what a capture setting actually is.
+ *
+ * Hand-built rather than taken from Radix: a `<button role="switch">` already
+ * gets Space and Enter from the platform, so there is nothing to gain.
+ *
+ * The hint is deliberately outside the label. A `<label>` forwards its click to
+ * the control inside it, so wrapping the explanation meant that reading what a
+ * setting does — or dragging across it to copy it — flipped that setting.
+ */
 export function Toggle({
   checked,
   onChange,
@@ -17,39 +27,58 @@ export function Toggle({
   hint?: string
   disabled?: boolean
 }) {
-  return (
-    <label
+  const id = useId()
+
+  const control = (
+    <button
+      id={id}
+      type="button"
+      role="switch"
+      data-pressable
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
       className={cx(
-        'flex cursor-pointer gap-3',
-        hint ? 'items-start' : 'items-center gap-2',
-        disabled && 'cursor-not-allowed opacity-50',
+        'relative h-[var(--switch-h)] w-[var(--switch-w)] shrink-0 rounded-full',
+        hint && 'mt-0.5',
+        checked ? 'bg-accent [--surface:var(--a-fill)]' : 'bg-control [--surface:var(--s-4)]',
       )}
     >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
+      <span
         className={cx(
-          'relative mt-0.5 h-[18px] w-[30px] shrink-0 rounded-full transition-colors',
-          checked ? 'bg-accent' : 'bg-control-active',
-          focusRing,
+          'absolute top-[var(--switch-gap)] h-[var(--switch-knob)] w-[var(--switch-knob)] rounded-full transition-[left]',
+          checked ? 'left-[var(--switch-travel)]' : 'left-[var(--switch-gap)]',
         )}
-      >
-        <span
-          className={cx(
-            'absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white transition-[left] duration-150',
-            checked ? 'left-[14px]' : 'left-[2px]',
-          )}
-        />
-      </button>
+        style={{ background: 'var(--c-accent-fg)' }}
+      />
+    </button>
+  )
 
-      <span className="min-w-0 flex-1">
-        <span className={cx('block font-medium text-ink', hint ? 'text-[12px]' : 'text-[11px]')}>{label}</span>
-        {hint && <span className="mt-0.5 block text-[11px] leading-relaxed text-muted">{hint}</span>}
-      </span>
+  const title = (
+    <label
+      htmlFor={id}
+      className={cx('block cursor-pointer font-medium text-ink', hint ? 'text-sm' : 'text-xs')}
+    >
+      {label}
     </label>
+  )
+
+  if (!hint) {
+    return (
+      <div className="flex items-center gap-2">
+        {control}
+        {title}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-start gap-3">
+      {control}
+      <div className="min-w-0 flex-1">
+        {title}
+        <p className="mt-0.5 text-xs leading-relaxed text-muted">{hint}</p>
+      </div>
+    </div>
   )
 }

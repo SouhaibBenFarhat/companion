@@ -18,7 +18,14 @@ import Foundation
 ///    accepted and does nothing. Zero volume is what stops the user hearing
 ///    themselves.
 final class MicrophoneRecorder {
-    private let engine = AVAudioEngine()
+    /// Replaced on every attempt, never reused.
+    ///
+    /// A failed start leaves the input node's audio unit initialised and
+    /// holding the device it failed on, and the next attempt could not even set
+    /// a device on it — -10851 on the retry, so the fallback ladder collapsed
+    /// on its second rung for a reason that had nothing to do with the device
+    /// it was trying.
+    private var engine = AVAudioEngine()
     private let ring = AudioRingBuffer(capacity: 48_000 * 2)
     private var converter: AVAudioConverter?
     private var isRunning = false
@@ -64,22 +71,37 @@ final class MicrophoneRecorder {
     ///   default, which on a Mac with several is a coin toss — Continuity can
     ///   hand it the iPhone microphone without warning.
     func start(echoCancellation: Bool, device: AudioInputDevice? = nil) throws {
+        do {
+            try open(echoCancellation: echoCancellation, device: device)
+        } catch {
+            // One fallback, not a ladder. The four-rung version existed to
+            // escape -10875, which was caused by connecting the shared
+            // input/output unit to the mixer — not by the device and not by
+            // echo cancellation. With that line gone the only case left worth
+            // handling is a device genuinely held by another app.
+            guard let device else { throw error }
+            SessionLog.shared.write(
+                "mic",
+                "\(device.name) would not open (\(error.localizedDescription)), using the system default"
+            )
+            onDegraded?("\(device.name) would not open. Listening on the system default microphone.")
+            try open(echoCancellation: echoCancellation, device: nil)
+        }
+    }
+
+    /// Reported when listening started, but not the way it was asked for.
+    var onDegraded: ((String) -> Void)?
+
+    private func open(echoCancellation: Bool, device: AudioInputDevice?) throws {
         stop()
         ring.reset()
+        engine = AVAudioEngine()
 
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             throw MicrophoneError.notPermitted
         }
 
         let input = engine.inputNode
-
-        // Before anything else touches the engine: changing the device after
-        // the format is read would leave a converter built for the wrong one.
-        if let device {
-            if AudioDevices.use(device, on: engine) {
-                SessionLog.shared.write("mic", "using \(device.name)")
-            }
-        }
 
         if echoCancellation {
             do {
@@ -102,9 +124,39 @@ final class MicrophoneRecorder {
             }
         }
 
-        // Voice processing needs a rendering graph to engage at all.
-        engine.connect(input, to: engine.mainMixerNode, format: nil)
-        engine.mainMixerNode.outputVolume = 0
+        // The device goes on last, after voice processing and before the
+        // format is read.
+        //
+        // Not first, which is where it was: turning voice processing on swaps
+        // the input node's audio unit for the voice-processing one, so a device
+        // set before that was set on a unit that then got thrown away. The
+        // engine came up on the system default with no error, or refused to
+        // start at all with -10875.
+        //
+        // Still before the format is read, because the converter is built from
+        // that format and the device decides it.
+        if let device {
+            if AudioDevices.use(device, on: engine) {
+                SessionLog.shared.write("mic", "using \(device.name)")
+            } else {
+                SessionLog.shared.write("mic", "\(device.name) refused; using the system default")
+            }
+        }
+
+        // Nothing is connected to the mixer, on purpose.
+        //
+        // On macOS the input node and the output node are the SAME audio unit —
+        // `engine.inputNode.auAudioUnit === engine.outputNode.auAudioUnit` is
+        // literally true. Touching `mainMixerNode` pulls the output half of that
+        // unit into the graph, so it then has to PLAY audio on whichever device
+        // was chosen for INPUT. The Logitech Brio has two input channels and no
+        // output channels, so the output format was invalid and the engine
+        // refused to start: -10875, with `IsFormatSampleRateAndChannelCountValid(outputHWFormat)`
+        // named in the error itself.
+        //
+        // The comment that used to be here said this line was needed for voice
+        // processing to engage. That was the opposite of the truth, and it is
+        // why six rounds of fixing looked at the microphone instead of the line.
         engine.prepare()
 
         // Read the format only now — voice processing changed it.

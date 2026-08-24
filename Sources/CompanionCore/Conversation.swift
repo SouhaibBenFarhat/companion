@@ -3,6 +3,38 @@ import Foundation
 public enum MessageRole: String, Codable, Sendable {
     case user
     case assistant
+    /// Something said out loud on the call, by the user.
+    ///
+    /// Kept in the conversation rather than in a transcript that evaporates.
+    /// A call is the thing being worked on, so it belongs in the record of the
+    /// work — you can scroll back to it, it survives a restart, and the agent
+    /// is answering about a conversation it can see rather than a summary of
+    /// one it was handed once.
+    case spokenByUser
+    /// Something said out loud by the person on the other end.
+    case spokenByCall
+    /// Something Companion said without being asked.
+    ///
+    /// A message like any other, so it lands where it happened. Kept in its own
+    /// list beside the conversation, it could only ever be drawn after every
+    /// line — including the lines it was about.
+    case noticed
+
+    /// Whether this was said aloud rather than typed.
+    public var isSpoken: Bool { self == .spokenByUser || self == .spokenByCall }
+
+    public init(spokenBy speaker: CaptureSpeaker) {
+        self = speaker == .me ? .spokenByUser : .spokenByCall
+    }
+
+    /// Who said it, for a transcript line.
+    public var speaker: CaptureSpeaker? {
+        switch self {
+        case .spokenByUser: return .me
+        case .spokenByCall: return .them
+        case .user, .assistant, .noticed: return nil
+        }
+    }
 }
 
 public struct Message: Codable, Equatable, Identifiable, Sendable {
@@ -73,10 +105,22 @@ public struct Conversation: Codable, Equatable, Identifiable, Sendable {
     }
 
     public mutating func append(_ message: Message) {
-        if messages.isEmpty, message.role == .user, title.isEmpty {
+        // Named after the first thing YOU asked, not the first thing said.
+        //
+        // The check used to require an empty conversation, which worked while
+        // the first message was always a typed question. A call now fills the
+        // record before anyone types, so that test never passed again and every
+        // conversation stayed untitled.
+        if title.isEmpty, message.role == .user {
             title = Self.title(fromFirstMessage: message.text)
         }
         messages.append(message)
         updatedAt = message.createdAt
+    }
+
+    /// Takes one message out. Used by Dismiss on an unprompted note.
+    public mutating func remove(id: String) {
+        messages.removeAll { $0.id == id }
+        updatedAt = Date()
     }
 }

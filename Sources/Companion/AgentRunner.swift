@@ -251,6 +251,7 @@ final class AgentRunner {
             case .toolUse(let name): tools.append(name)
             case .sessionStarted: other.append("session")
             case .finished(_, let isError): other.append(isError ? "finished(error)" : "finished")
+            case .structuredOutput: other.append("structured")
             }
         }
 

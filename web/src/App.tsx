@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react'
 import { Header } from './components/Header'
 import { MessageList } from './components/MessageList'
 import { Composer } from './components/Composer'
-import { HistoryMenu } from './components/HistoryMenu'
 import { SettingsSheet } from './components/SettingsSheet'
 import { AwarenessBar } from './components/AwarenessBar'
 import { ComposerControls } from './components/ComposerControls'
 import { listen, send } from './lib/bridge'
 import { useTypewriter } from './lib/useTypewriter'
-import type { StatePayload, Suggestion, TranscriptLine } from './lib/types'
+import type { StatePayload, TranscriptLine } from './lib/types'
 
 export function App() {
   const [state, setState] = useState<StatePayload | null>(null)
@@ -30,7 +29,6 @@ export function App() {
   const [captureError, setCaptureError] = useState('')
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [screen, setScreen] = useState('')
-  const [suggestion, setSuggestion] = useState<Suggestion | null>(null)
   const [screenshot, setScreenshot] = useState<'capturing' | 'ready' | 'failed' | 'none'>('none')
 
   useEffect(() => {
@@ -82,14 +80,16 @@ export function App() {
         case 'openSettings':
           setShowSettings(true)
           break
+        case 'messages':
+          // A line settling mid-call. Only the messages change, so the rest of
+          // the state is left alone.
+          setState((current) => (current ? { ...current, messages: payload.messages } : current))
+          break
         case 'transcript':
           setTranscript(payload.entries)
           break
         case 'screen':
           setScreen([payload.app, payload.detail].filter(Boolean).join(' · '))
-          break
-        case 'suggestion':
-          setSuggestion({ text: payload.text, reason: payload.reason })
           break
         case 'screenshot':
           setScreenshot(payload.state)
@@ -115,20 +115,23 @@ export function App() {
   }, [showHistory, showSettings])
 
   if (!state) {
-    return <div className="grid h-full place-items-center bg-well text-[12px] text-muted">Loading…</div>
+    return <div className="grid h-full place-items-center bg-well text-sm text-muted">Loading…</div>
   }
 
   return (
     <div className="relative flex h-full flex-col bg-well">
       <Header
         repository={state.repository}
+        hasRepository={state.hasRepository}
+        conversations={state.conversations}
+        currentId={state.currentId}
         historyOpen={showHistory}
         settingsOpen={showSettings}
         onChat={() => {
           setShowSettings(false)
           setShowHistory(false)
         }}
-        onHistory={() => setShowHistory((open) => !open)}
+        onHistoryOpenChange={setShowHistory}
         onSettings={() => setShowSettings((open) => !open)}
       />
 
@@ -136,7 +139,6 @@ export function App() {
         listening={state.listening}
         levels={levels}
         error={captureError}
-        transcript={transcript}
         screen={screen}
         suggestionsEnabled={state.settings.suggestionsEnabled}
         onSuggestionsChange={(value) =>
@@ -156,6 +158,7 @@ export function App() {
           settings={state.settings}
           agent={state.agent}
           repository={state.repository}
+          hasRepository={state.hasRepository}
           permissions={state.permissions}
           inputDevices={state.inputDevices}
           onClose={() => setShowSettings(false)}
@@ -171,8 +174,7 @@ export function App() {
             errorCode={errorCode}
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
-            suggestion={suggestion}
-            onDismissSuggestion={() => setSuggestion(null)}
+            transcript={transcript}
           />
           <Composer
             busy={busy}
@@ -191,14 +193,6 @@ export function App() {
             }
           />
         </>
-      )}
-
-      {showHistory && (
-        <HistoryMenu
-          conversations={state.conversations}
-          currentId={state.currentId}
-          onClose={() => setShowHistory(false)}
-        />
       )}
     </div>
   )

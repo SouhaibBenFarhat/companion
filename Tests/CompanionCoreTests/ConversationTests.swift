@@ -67,3 +67,72 @@ final class ConversationTests: XCTestCase {
         XCTAssertEqual(restored.agentSessionID, "sess-42")
     }
 }
+
+extension ConversationTests {
+    /// A call fills the record before anyone types, so the title has to come
+    /// from the first typed question rather than the first message.
+    func testTitleComesFromTheFirstTypedQuestion() {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .spokenByCall, text: "so what do you think about the retry limit"))
+        conversation.append(Message(role: .spokenByUser, text: "not sure yet"))
+        XCTAssertTrue(conversation.title.isEmpty)
+
+        conversation.append(Message(role: .user, text: "what is their retry limit?"))
+        XCTAssertEqual(conversation.title, Conversation.title(fromFirstMessage: "what is their retry limit?"))
+    }
+
+    /// Speech is kept, and keeps who said it.
+    func testSpokenMessagesSurviveARoundTrip() throws {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .spokenByUser, text: "I got a bit too deep into the rabbit hole."))
+        conversation.append(Message(role: .spokenByCall, text: "Right."))
+
+        let restored = try JSONDecoder().decode(
+            Conversation.self, from: JSONEncoder().encode(conversation)
+        )
+        XCTAssertEqual(restored.messages.map(\.role), [.spokenByUser, .spokenByCall])
+        XCTAssertEqual(restored.messages.first?.role.speaker, .me)
+        XCTAssertTrue(restored.messages.allSatisfy(\.role.isSpoken))
+    }
+}
+
+extension ConversationTests {
+    /// A note has to land after the line that prompted it. Held in its own
+    /// list, it could only ever be drawn after every line — including the ones
+    /// it was about.
+    func testANoteSitsWhereItHappened() {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .spokenByCall, text: "closures capture by reference"))
+        conversation.append(Message(role: .noticed, text: "They mean by value for primitives."))
+        conversation.append(Message(role: .spokenByCall, text: "so same input, same output"))
+
+        XCTAssertEqual(
+            conversation.messages.map(\.role),
+            [.spokenByCall, .noticed, .spokenByCall]
+        )
+    }
+
+    func testDismissingANoteRemovesIt() {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .spokenByCall, text: "keep me"))
+        let note = Message(role: .noticed, text: "dismiss me")
+        conversation.append(note)
+
+        conversation.remove(id: note.id)
+
+        XCTAssertEqual(conversation.messages.map(\.text), ["keep me"])
+    }
+
+    func testRemovingSomethingThatIsNotThereChangesNothing() {
+        var conversation = Conversation(repositoryPath: "/tmp", agent: .claude)
+        conversation.append(Message(role: .user, text: "hello"))
+        conversation.remove(id: "not-a-real-id")
+        XCTAssertEqual(conversation.messages.count, 1)
+    }
+
+    /// A note is not speech, and must not claim a speaker.
+    func testANoteHasNoSpeaker() {
+        XCTAssertNil(MessageRole.noticed.speaker)
+        XCTAssertFalse(MessageRole.noticed.isSpoken)
+    }
+}

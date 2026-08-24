@@ -4,6 +4,17 @@ import PackageDescription
 let package = Package(
     name: "Companion",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        // Whisper, converted to Core ML and run on the Neural Engine.
+        //
+        // The first external dependency in this package, and it is here for one
+        // reason: accuracy on technical speech. Apple's on-device transcriber is
+        // free and needs no download, but a pairing call is full of identifiers
+        // and library names, which is exactly where it is weakest.
+        //
+        // Both engines stay selectable. This is an option, not a replacement.
+        .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.1.0"),
+    ],
     targets: [
         // Pure logic (agent command building, event decoding, persistence,
         // panel geometry) — no AppKit, so it stays unit-testable.
@@ -13,7 +24,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "Companion",
-            dependencies: ["CompanionCore"],
+            dependencies: [
+                "CompanionCore",
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+            ],
             path: "Sources/Companion",
             linkerSettings: [
                 // Embeds Info.plist into the bare `swift run` binary. Without

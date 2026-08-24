@@ -104,3 +104,45 @@ final class SuggestionGateTests: XCTestCase {
         XCTAssertEqual(gate.admit("the certificate expires on Friday", at: 30, state: &state), .show)
     }
 }
+
+extension TurnTriggerTests {
+    /// "Next question. What is debouncing" went unanswered — the case the
+    /// feature exists for. The gap and the cap exist to stop an assistant
+    /// remarking on everything; a question asked out loud is not a remark, and
+    /// holding the reply twelve seconds delivers it after the moment.
+    func testAnAnswerToAQuestionIsNotHeldBack() {
+        let gate = SuggestionGate()
+        var state = SuggestionGate.State()
+
+        XCTAssertEqual(gate.admit("a first note", at: 0, state: &state), .show)
+        XCTAssertEqual(gate.admit("something else entirely", at: 1, state: &state), .tooSoon)
+        XCTAssertEqual(
+            gate.admit(
+                "Debouncing waits until typing stops before firing.",
+                at: 1,
+                answersAQuestion: true,
+                state: &state
+            ),
+            .show
+        )
+    }
+
+    /// The same answer twice is still noise, question or not.
+    func testAnAnswerIsStillNotAllowedToRepeatItself() {
+        let gate = SuggestionGate()
+        var state = SuggestionGate.State()
+        let answer = "Debouncing waits until typing stops before firing."
+
+        XCTAssertEqual(gate.admit(answer, at: 0, answersAQuestion: true, state: &state), .show)
+        XCTAssertEqual(gate.admit(answer, at: 1, answersAQuestion: true, state: &state), .repeating)
+    }
+
+    /// A remark still waits, so the rest of the feature is unchanged.
+    func testARemarkStillWaits() {
+        let gate = SuggestionGate()
+        var state = SuggestionGate.State()
+
+        XCTAssertEqual(gate.admit("a first note", at: 0, state: &state), .show)
+        XCTAssertEqual(gate.admit("a completely different remark", at: 2, state: &state), .tooSoon)
+    }
+}

@@ -1,0 +1,131 @@
+import XCTest
+@testable import CompanionCore
+
+final class SuggestionCleanerTests: XCTestCase {
+    /// Straight from the panel, twice, on two different calls. The model was
+    /// handed a labelled transcript and wrote the next turn of it.
+    func testRejectsTheLineThatKeptReachingTheScreen() {
+        XCTAssertNil(SuggestionCleaner.clean("Human: whats the most recent claude model?"))
+        XCTAssertNil(SuggestionCleaner.clean("Human: what's the name of the platform he is describing?"))
+    }
+
+    func testRejectsEveryLabelledQuestion() {
+        for label in ["Human", "Assistant", "User", "AI", "You", "The call", "Claude"] {
+            XCTAssertNil(SuggestionCleaner.clean("\(label): so what do you think?"), label)
+        }
+    }
+
+    /// A label on top of a real answer is the right words in the wrong costume.
+    /// Take the costume off rather than throw the answer away.
+    func testStripsALabelFromAStatement() {
+        XCTAssertEqual(
+            SuggestionCleaner.clean("Assistant: The most recent model is Opus 5."),
+            "The most recent model is Opus 5."
+        )
+    }
+
+    func testStripsMoreThanOneLabel() {
+        XCTAssertEqual(SuggestionCleaner.clean("Human: Assistant: It ships on Tuesday."), "It ships on Tuesday.")
+    }
+
+    /// Several labelled turns is a script, and no stripping makes it a note.
+    func testRejectsAWholeScript() {
+        let script = """
+            Human: what should we do about the regex?
+            Assistant: use a parser instead.
+            """
+        XCTAssertNil(SuggestionCleaner.clean(script))
+    }
+
+    /// Straight from the panel: the model repeating what it was given.
+    func testRejectsThePromptReadBack() {
+        XCTAssertNil(SuggestionCleaner.clean("""
+            <screen> App: Claude Window: Claude </screen>
+            The last thing said was: "I found with even Opus 5 extra high, there's a high chance"
+            """))
+        XCTAssertNil(SuggestionCleaner.clean("<call>they said something</call>"))
+    }
+
+    /// Also from the panel: the model reacting rather than helping. The bar for
+    /// interrupting a live call is that the user can act on it.
+    func testRejectsTheModelThinkingOutLoud() {
+        XCTAssertNil(SuggestionCleaner.clean("""
+            What's even "Fable 5" here lol
+            I'm confused about what the speaker's using. I'm listening but none of the names make sense
+            """))
+        XCTAssertNil(SuggestionCleaner.clean("I don't have enough context to help here."))
+    }
+
+    /// A note may still be about the user, and may still use the word "I".
+    func testKeepsANoteThatHappensToSayI() {
+        let note = "I'd check their retry limit — the docs they are quoting were replaced in June."
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
+    /// True, well written, and worthless: the speaker had just said it.
+    func testRejectsAgreeingWithTheCall() {
+        XCTAssertNil(SuggestionCleaner.clean(
+            "The speaker is correct — closures capture live references, not copies."
+        ))
+        XCTAssertNil(SuggestionCleaner.clean("That's correct, and it also works for let bindings."))
+        XCTAssertNil(SuggestionCleaner.clean("Good point — the retry limit is documented."))
+    }
+
+    /// Contradicting the call is the whole reason this feature exists.
+    func testKeepsANoteThatContradictsTheCall() {
+        let note = "Their retry limit is 3, not 5 — the page they are quoting was replaced in June."
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
+    /// The word "correct" in the middle of a real note is not agreement.
+    func testKeepsANoteThatMerelyUsesTheWord() {
+        let note = "The correct flag is --tools, not --allowedTools, on this version."
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
+    // MARK: - What must survive
+
+    func testKeepsAnOrdinaryNote() {
+        let note = "Their retry limit is 3, not 5 — the docs they are quoting are out of date."
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
+    /// A note that was never labelled may legitimately end in a question mark.
+    func testKeepsAnUnlabelledQuestion() {
+        let note = "Worth asking whether their sandbox has network access?"
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
+    func testKeepsAColonThatIsNotALabel() {
+        let note = "One cause: the tap is stereo and you are reading it as mono."
+        XCTAssertEqual(SuggestionCleaner.clean(note), note)
+    }
+
+    /// Staying quiet is the normal case.
+    func testSilenceIsNothing() {
+        XCTAssertNil(SuggestionCleaner.clean(""))
+        XCTAssertNil(SuggestionCleaner.clean("   \n  "))
+        XCTAssertNil(SuggestionCleaner.clean("Assistant:"))
+    }
+}
+
+final class AwarenessPromptOrderTests: XCTestCase {
+    /// The transcript is a labelled script, and a script asks to be continued.
+    /// An instruction underneath it competes with everything above.
+    func testTheInstructionComesBeforeTheTranscript() {
+        let prompt = AwarenessPrompt.build(
+            question: "anything to say?",
+            conversation: "The call: we should use a parser",
+            instruction: "You are writing a private note to one person."
+        )
+
+        let instructionAt = prompt.range(of: "private note")!.lowerBound
+        let transcriptAt = prompt.range(of: "<call>")!.lowerBound
+        XCTAssertLessThan(instructionAt, transcriptAt)
+    }
+
+    func testAnEmptyInstructionAddsNothing() {
+        let prompt = AwarenessPrompt.build(question: "hello", conversation: "", instruction: "  ")
+        XCTAssertEqual(prompt, "hello")
+    }
+}

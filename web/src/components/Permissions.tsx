@@ -1,16 +1,41 @@
 import { send } from '../lib/bridge'
-import { Button, Notice, cx } from '../ui'
+import { useState } from 'react'
+import { Button, Divider, Hint, Notice, cx } from '../ui'
 import type { PermissionItem, Permissions as PermissionsPayload } from '../lib/types'
 
-function Dot({ state }: { state: PermissionItem['state'] }) {
+/**
+ * The way out when the switch is already on and the app is still refused.
+ *
+ * A grant is filed against what the app's signature says. Replace an unsigned
+ * build with a signed one and the old entry stays behind: macOS has a decision
+ * on record for this bundle identifier, so it stops prompting, and the row in
+ * System Settings reads on while the app gets nothing. Nothing inside the app
+ * can clear that — the command is the only route, and it is the user's to run.
+ */
+function Stuck({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false)
+
   return (
-    <span
-      aria-hidden="true"
-      className={cx(
-        'mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
-        state === 'granted' ? 'bg-accent-text' : 'bg-muted/50',
-      )}
-    />
+    <div className="mt-1.5">
+      <Hint>
+        Switch already on and still asking? macOS is holding an old entry for a
+        previous build of this app. Clear it in Terminal, then reopen Companion:
+      </Hint>
+      <div data-surface="code" className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5">
+        <code className="selectable min-w-0 flex-1 truncate font-mono text-xs text-ink">{command}</code>
+        <Button
+          size="xs"
+          tight
+          onClick={() => {
+            navigator.clipboard.writeText(command)
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 1600)
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -19,25 +44,42 @@ function Row({ item }: { item: PermissionItem }) {
 
   return (
     <div className="flex items-start gap-2.5 py-2">
-      <Dot state={item.state} />
+      <span
+        aria-hidden="true"
+        className={cx(
+          'mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+          granted ? 'bg-accent-text' : 'bg-faint',
+        )}
+      />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-[12px] font-medium text-ink">{item.title}</span>
-          {granted && <span className="text-[11px] text-muted">on</span>}
+          <span className="text-sm font-medium text-ink">{item.title}</span>
+          {granted && <span className="text-xs text-muted">on</span>}
         </div>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-muted">{item.reason}</p>
+        <Hint>{item.reason}</Hint>
 
-        {granted && item.needsRestart && (
-          <p className="mt-1 text-[11px] leading-relaxed text-muted">
-            Just granted this? Quit and reopen Companion — macOS only reads it once per launch.
-          </p>
+        {/* Only while it is still off. macOS reads these once, at launch, so a
+            switch flipped while Companion is running changes nothing until it
+            restarts — which is the explanation for a row that says off when the
+            switch says on. Once the row says on, there is nothing left to
+            reopen for and saying it anyway is just noise. */}
+        {!granted && item.needsRestart && (
+          <div className="mt-1">
+            <Hint>Switched it on and this still says off? macOS only reads it at launch.</Hint>
+            <div className="mt-1.5">
+              <Button size="xs" onClick={() => send({ type: 'relaunch' })}>
+                Quit and reopen
+              </Button>
+            </div>
+          </div>
         )}
+
+        {!granted && item.resetCommand && <Stuck command={item.resetCommand} />}
       </div>
 
       {!granted && (
         <Button
-          variant="secondary"
           size="sm"
           onClick={() =>
             send(
@@ -59,20 +101,18 @@ export function Permissions({ permissions }: { permissions: PermissionsPayload }
     <div className="space-y-1">
       {!permissions.isReady && <Notice>{permissions.summary}</Notice>}
 
-      <div className="divide-y divide-line">
-        {permissions.items.map((item) => (
-          <Row key={item.id} item={item} />
+      <div>
+        {permissions.items.map((item, index) => (
+          <div key={item.id}>
+            {index > 0 && <Divider />}
+            <Row item={item} />
+          </div>
         ))}
       </div>
 
       {/* macOS re-reads these only when asked, so a grant made in System
           Settings does not reach a panel that is already open. */}
-      <Button
-        variant="ghost"
-        size="sm"
-        full
-        onClick={() => send({ type: 'refreshPermissions' })}
-      >
+      <Button variant="ghost" size="sm" full onClick={() => send({ type: 'refreshPermissions' })}>
         Check again
       </Button>
     </div>

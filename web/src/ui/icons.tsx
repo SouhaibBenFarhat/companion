@@ -22,6 +22,7 @@ export {
   Terminal as AgentIcon,
   Check as CheckIcon,
   Image as ScreenshotIcon,
+  Square as StopIcon,
   MessageSquare as ChatIcon,
 } from 'lucide-react'
 

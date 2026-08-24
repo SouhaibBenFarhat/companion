@@ -36,6 +36,9 @@ fi
 # Kept in step with the template on every build.
 scripts/make-dev-plist.sh > /dev/null
 
+# Cheap, and it catches a crash that only shows itself on launch.
+scripts/check-dictionary-keys.sh
+
 echo "==> Building the interface"
 npm --prefix web run build
 
@@ -59,13 +62,68 @@ cp packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp -R web/dist "$APP/Contents/Resources/web"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-echo "==> Signing (ad-hoc)"
-codesign --force --sign - "$APP"
+# Which identity signs the bundle.
+#
+# macOS does not remember an app by its name or its path. It remembers the
+# fingerprint of its code, and every permission you grant is filed against that
+# fingerprint. An ad-hoc signature has no stable identity, so changing one line
+# and rebuilding produces what macOS considers a different app with the same
+# name: the switches you turned on in System Settings stay in the list, still
+# looking on, pointing at a build that no longer exists. Microphone, Screen
+# Recording and Accessibility all have to be granted again, every time.
+#
+# A self-signed certificate fixes that. It is free, it is made locally in
+# Keychain Access, and it proves nothing to anybody else — which is fine,
+# because the only thing being asked of it is to stay the same tomorrow.
+#
+#   Keychain Access -> Certificate Assistant -> Create a Certificate...
+#   Name: Companion Dev Signing   Identity Type: Self Signed Root
+#   Certificate Type: Code Signing
+#
+# Release builds stay ad-hoc: a certificate only this Mac has means nothing on
+# anybody else's.
+SIGNING_IDENTITY="${COMPANION_SIGNING_IDENTITY:-Companion Dev Signing}"
+
+if [ "$VARIANT" = "dev" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGNING_IDENTITY"; then
+  echo "==> Signing as ${SIGNING_IDENTITY}"
+  codesign --force --sign "$SIGNING_IDENTITY" "$APP"
+else
+  echo "==> Signing (ad-hoc)"
+  codesign --force --sign - "$APP"
+  if [ "$VARIANT" = "dev" ]; then
+    echo "    No '${SIGNING_IDENTITY}' certificate found, so this build has no"
+    echo "    stable identity: macOS will drop its permissions on the next"
+    echo "    rebuild. See the comment above this line in scripts/build-app.sh."
+  fi
+fi
+
+# What macOS actually matches a permission against, printed so a lost grant can
+# be checked rather than guessed at.
+#
+# For a signed build this is the designated requirement, and it must be
+# identical from one build to the next — the code hash changes every time and
+# does not matter. For an ad-hoc build there is no certificate to name, the
+# requirement falls back to the code hash, and every rebuild is a new app.
+codesign -d -r- "$APP" 2>&1 | grep 'designated' | sed 's/^/    /'
 
 # Only the production build is ever released, so only it is zipped.
 if [ "$VARIANT" = "dev" ]; then
+  # Install it, rather than leaving it in dist/ for someone to copy by hand.
+  #
+  # Two copies of the same app is the worst state this can be in. macOS finds
+  # an app by its bundle identifier, so `open dist/Companion Dev.app` can
+  # launch the one in /Applications instead — same name, different file, older
+  # build. Every fix goes into the copy nobody is running, and every permission
+  # is granted to the copy nobody is rebuilding. That is not a state you can
+  # debug from inside the app, because both are called Companion Dev.
+  echo "==> Installing to /Applications/${APP_NAME}.app"
+  rm -rf "/Applications/${APP_NAME}.app"
+  cp -R "$APP" "/Applications/${APP_NAME}.app"
+  # And leave nothing behind to launch by mistake.
+  rm -rf "$APP"
+
   echo "==> Done (development build, not zipped)"
-  echo "    $APP"
+  echo "    /Applications/${APP_NAME}.app"
   echo "    data: ~/Library/Application Support/${APP_NAME}"
   exit 0
 fi

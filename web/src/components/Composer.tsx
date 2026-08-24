@@ -1,10 +1,17 @@
-import { useEffect, useRef } from 'react'
-import { send, startDrag } from '../lib/bridge'
-import { Bar, Button, Hint, IconButton } from '../ui'
-import { SendIcon, iconStroke } from '../ui/icons'
+import { useRef } from 'react'
+import { send } from '../lib/bridge'
+import { AutoTextarea, Bar, Divider, DragRegion, Hint, IconButton, Well } from '../ui'
+import { SendIcon, StopIcon, iconStroke } from '../ui/icons'
 
-/** Roughly three lines at rest, eight before it scrolls. */
-const MIN_HEIGHT = 58
+/**
+ * One line at rest, eight before it scrolls.
+ *
+ * The field hugs its text. A three-line minimum meant an empty box with the
+ * text along the top, so Send had nothing to line up with — centred, it sat in
+ * the blank space underneath, and bottom-aligned it sat on a floor two lines
+ * below what you had written.
+ */
+const MIN_HEIGHT = 22
 const MAX_HEIGHT = 200
 
 export function Composer({
@@ -19,77 +26,82 @@ export function Composer({
   focusToken: number
   controls: React.ReactNode
 }) {
-  const input = useRef<HTMLTextAreaElement>(null)
+  const field = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
-    input.current?.focus()
-  }, [focusToken, busy])
-
-  const resize = () => {
-    const element = input.current
-    if (!element) return
-    element.style.height = 'auto'
-    element.style.height = `${Math.min(Math.max(element.scrollHeight, MIN_HEIGHT), MAX_HEIGHT)}px`
+  /** Returns whether the text left the field, so it knows to clear itself. */
+  const submit = (text: string) => {
+    if (!text || busy || disabled) return false
+    send({ type: 'ask', text })
+    return true
   }
 
-  const submit = () => {
-    const element = input.current
-    if (!element) return
-    const text = element.value.trim()
-    if (!text || busy || disabled) return
-
-    send({ type: 'ask', text })
-    element.value = ''
-    resize()
+  const sendNow = () => {
+    if (!field.current) return
+    if (!submit(field.current.value.trim())) return
+    field.current.value = ''
+    field.current.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
   return (
-    <Bar edge="top" className="p-2.5">
-      {/* A recessed well, not another raised surface: the field reads as a hole
-          in the chrome rather than a card sitting on it. */}
-      <div className="rounded-xl border border-line-strong bg-input px-2.5 pb-1.5 pt-2.5 transition-colors focus-within:border-accent focus-within:bg-input-focus">
-        <textarea
-          ref={input}
-          rows={3}
-          disabled={disabled}
-          onInput={resize}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              submit()
-            }
-          }}
-          placeholder={disabled ? 'No agent found' : 'Ask about this repo…'}
-          style={{ minHeight: MIN_HEIGHT, maxHeight: MAX_HEIGHT }}
-          className="selectable block w-full resize-none bg-transparent px-0.5 text-[13px] leading-relaxed text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed"
-        />
+    <Bar edge="top">
+      <div className="p-2.5">
+        <Well>
+          {/* Send sits with the writing, not with the settings — it is the one
+              control that acts on what you typed. Centred against the field
+              rather than pinned to its floor, so it holds still as the box
+              grows instead of walking down the panel line by line. */}
+          <div className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-2.5">
+            <div className="min-w-0 flex-1">
+              <AutoTextarea
+                ref={field}
+                min={MIN_HEIGHT}
+                max={MAX_HEIGHT}
+                disabled={disabled}
+                submit={submit}
+                // Focus follows the panel being summoned, and returns when an
+                // answer finishes.
+                resetToken={`${focusToken}:${busy}`}
+                placeholder={disabled ? 'No agent found' : 'Ask about this repo…'}
+              />
+            </div>
 
-        {/* Settings on the left, send on the right, one line. Inside the well
-            rather than above it — everything shipped puts them here, and above
-            the box is where things go when they are meant to disappear. */}
-        <div className="flex items-center gap-1.5 pt-1">
-          {controls}
-          <span className="flex-1" />
-          {busy && (
-            <Button variant="ghost" size="sm" onClick={() => send({ type: 'cancel' })}>
-              Stop
-            </Button>
-          )}
-          <IconButton
-            label="Send"
-            disabled={disabled || busy}
-            onClick={submit}
-            className="bg-accent text-accent-fg hover:bg-accent-hover hover:text-accent-fg active:brightness-90"
-          >
-            <SendIcon size={15} strokeWidth={iconStroke} />
-          </IconButton>
+            {/* One slot, one meaning: the button that starts the answer is the
+                button that stops it. */}
+            {busy ? (
+              <IconButton
+                label="Stop"
+                variant="filled"
+                tone="neutral"
+                onClick={() => send({ type: 'cancel' })}
+              >
+                <StopIcon size={13} strokeWidth={iconStroke} />
+              </IconButton>
+            ) : (
+              <IconButton
+                label="Send"
+                variant="filled"
+                tone="accent"
+                disabled={disabled}
+                onClick={sendNow}
+              >
+                <SendIcon size={15} strokeWidth={iconStroke} />
+              </IconButton>
+            )}
+          </div>
+
+          {/* Splits what you are writing from what it will be written with. */}
+          <Divider />
+
+          <div className="flex min-w-0 items-center gap-1.5 px-2 py-1.5">{controls}</div>
+        </Well>
+
+        {/* Dead space otherwise, so it earns its keep as a second grab area. */}
+        <div className="px-1 pt-1.5">
+          <DragRegion>
+            <Hint>Enter to send · Shift+Enter for a new line · Esc to hide</Hint>
+          </DragRegion>
         </div>
       </div>
-
-      {/* Dead space otherwise, so it earns its keep as a second grab area. */}
-      <Hint onMouseDown={(e) => startDrag(e)} className="cursor-grab px-1 pt-1.5 active:cursor-grabbing">
-        Enter to send · Shift+Enter for a new line · Esc to hide
-      </Hint>
     </Bar>
   )
 }

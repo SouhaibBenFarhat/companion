@@ -46,6 +46,19 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # Swift accepts a dictionary literal with a repeated key and traps on it
+      # at runtime. The state payload is rebuilt on every message from the
+      # panel, so one repeat is a crash before anything reaches the screen.
+      - name: Check no dictionary literal repeats a key
+        run: scripts/check-dictionary-keys.sh
+
+      # Named separately from the bundle build so a token or kit rule failure
+      # reads as itself rather than as "packaging broke".
+      - name: Check the interface rules
+        run: |
+          npm --prefix web ci
+          npm --prefix web test
+
       # Catches packaging breakage (Info.plist, icon, the web build, codesign)
       # on the PR instead of on release day.
       - name: Build the app bundle

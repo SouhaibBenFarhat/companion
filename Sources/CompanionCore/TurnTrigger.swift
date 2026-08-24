@@ -95,18 +95,29 @@ public struct SuggestionGate: Sendable {
         case nothingToSay
     }
 
+    /// - Parameter answersAQuestion: whether somebody on the call asked
+    ///   something and this answers it.
+    ///
+    ///   The gap and the per-minute cap exist to stop an assistant remarking on
+    ///   everything. A direct question is not a remark: it was asked out loud,
+    ///   the user is about to have to answer it, and holding the reply for
+    ///   twelve seconds means delivering it after the moment has passed. The
+    ///   repeat check still applies — the same answer twice is still noise.
     public func admit(
         _ text: String,
         at now: TimeInterval,
+        answersAQuestion: Bool = false,
         state: inout State
     ) -> Decision {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return .nothingToSay }
 
-        if let last = state.recentTimes.last, now - last < minimumGap { return .tooSoon }
+        if !answersAQuestion, let last = state.recentTimes.last, now - last < minimumGap {
+            return .tooSoon
+        }
 
         state.recentTimes.removeAll { now - $0 > 60 }
-        if state.recentTimes.count >= maximumPerMinute { return .tooMany }
+        if !answersAQuestion, state.recentTimes.count >= maximumPerMinute { return .tooMany }
 
         if similarity(cleaned, state.lastText) >= noveltyThreshold { return .repeating }
 

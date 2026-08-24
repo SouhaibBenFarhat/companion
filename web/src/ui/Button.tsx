@@ -1,43 +1,68 @@
-import { cx, disabled, focusRing, controlHeight, textSize, type Size } from './styles'
+import {
+  appearance,
+  cx,
+  height,
+  pressed as pressedTone,
+  textSize,
+  type Size,
+  type Tone,
+  type Variant,
+} from './variants'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type NativeButton = Omit<React.ComponentPropsWithRef<'button'>, 'className'>
 
-const variants: Record<Variant, string> = {
-  // Filled. One per view at most — the thing you actually want pressed.
-  primary: 'bg-accent text-accent-fg hover:bg-accent-hover active:brightness-90 font-medium',
-  // Bordered. Reads as a button standing still, which a plain label never does.
-  secondary:
-    'bg-control text-ink border border-line-strong hover:bg-control-hover active:bg-control-active',
-  // No chrome until you touch it. For dense rows where borders would be noise.
-  ghost: 'text-muted hover:bg-control-hover hover:text-ink active:bg-control-active',
-  danger: 'text-danger hover:bg-danger-soft active:brightness-95',
-}
-
+/**
+ * A button.
+ *
+ * No `className`. In a stylesheet the source order decides the winner, not the
+ * order of names in the class attribute, so a passed-in override silently did
+ * nothing anyway. A view that wants spacing wraps this; a view that wants a
+ * different look asks for a variant.
+ *
+ * Hover, active, focus and disabled are not here. They come from base.css,
+ * derived from the surface this sits on.
+ */
 export function Button({
-  variant = 'secondary',
-  size = 'md',
+  variant = 'outlined',
+  tone,
+  size = 'sm',
   full = false,
-  className,
+  pressed = false,
+  tight = false,
+  flexible = false,
+  children,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+}: NativeButton & {
   variant?: Variant
+  tone?: Tone
   size?: Size
   full?: boolean
+  /** Held open or armed — a state, not a hover. Also drives `aria-expanded`. */
+  pressed?: boolean
+  /** Narrow padding, for a button that sits in a row of icons. */
+  tight?: boolean
+  /** May shrink and truncate. For a row that has to survive a 320pt panel. */
+  flexible?: boolean
 }) {
+  const resolved: Tone = tone ?? (variant === 'filled' ? 'accent' : 'neutral')
+
   return (
     <button
       type="button"
+      data-pressable
+      data-pressed={pressed}
       {...props}
       className={cx(
-        'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 transition-colors select-none',
-        controlHeight[size],
+        'inline-flex select-none items-center justify-center gap-1.5 rounded-md',
+        flexible ? 'min-w-0 shrink' : 'shrink-0',
+        tight ? 'px-1.5' : 'px-3',
+        height[size],
         textSize[size],
-        variants[variant],
+        pressed ? pressedTone[resolved] : appearance[variant][resolved],
         full && 'w-full',
-        focusRing,
-        disabled,
-        className,
       )}
-    />
+    >
+      {children}
+    </button>
   )
 }

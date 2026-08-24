@@ -26,16 +26,40 @@ public enum AgentKind: String, Codable, CaseIterable, Sendable {
 }
 
 /// How much the agent is allowed to do to the repo it is pointed at.
+///
+/// Two settings, and between them they must cover every case without ever
+/// producing a question. Companion runs the agent headless: there is no
+/// terminal, so an approval prompt has nowhere to appear and nowhere to be
+/// answered. The run simply stops, and the panel shows an assistant asking the
+/// user to approve something in a window that does not exist.
 public enum AgentPermission: String, Codable, CaseIterable, Sendable {
-    /// Answer questions and read the repo, but never change a file.
-    /// The sensible default while pairing — you don't want an assistant
-    /// editing the code you are demonstrating.
+    /// Read and answer. Cannot write, cannot run a shell.
+    ///
+    /// The default while pairing — you do not want an assistant editing the
+    /// code you are demonstrating. Enforced by handing the agent only the
+    /// read-only tools, not by denying the write ones: denying `Edit` and
+    /// `Write` while leaving `Bash` in place is not read-only at all, and a
+    /// panel set to "Read only" created a file in the user's home folder with
+    /// `echo > file`.
     case readOnly
-    /// Let it edit files without asking each time.
+    /// No tools at all. Reads the prompt, answers, stops.
+    ///
+    /// For the unprompted note, which reacts to a transcript it has already
+    /// been handed and has no business touching the disk. Left with reading
+    /// tools and no chosen folder, it ran in the user's home directory and went
+    /// looking: a note came back quoting a file on their Desktop and a
+    /// conversation from another app entirely.
+    case noTools
+    /// Full power inside the working folder, and never a prompt.
+    ///
+    /// Deliberately armed: the panel asks twice before turning it on. An
+    /// assistant that cannot run the tests or the build is a search box over
+    /// your files, so this mode holds nothing back.
     case acceptEdits
 
     public var title: String {
         switch self {
+        case .noTools: return "No tools"
         case .readOnly: return "Read only"
         case .acceptEdits: return "Allow edits"
         }
@@ -82,6 +106,10 @@ public enum AgentCommandBuilder {
     ///   - systemPrompt: appended to the agent's own system prompt, never
     ///     replacing it. This is where the "you are answering live during a
     ///     call, be brief" instruction goes.
+    /// - Parameter jsonSchema: a shape the reply must take. The CLI turns it
+    ///   into a tool the model has to call, and the runtime validates the
+    ///   arguments — so the answer arrives as an object rather than as prose
+    ///   that has to be parsed and hoped about. Claude only; Codex ignores it.
     public static func build(
         kind: AgentKind,
         executable: URL,
@@ -89,7 +117,8 @@ public enum AgentCommandBuilder {
         workingDirectory: URL,
         sessionID: String? = nil,
         systemPrompt: String? = nil,
-        permission: AgentPermission = .readOnly
+        permission: AgentPermission = .readOnly,
+        jsonSchema: String? = nil
     ) -> AgentCommand {
         let arguments: [String]
         switch kind {
@@ -97,7 +126,8 @@ public enum AgentCommandBuilder {
             arguments = claudeArguments(
                 sessionID: sessionID,
                 systemPrompt: systemPrompt,
-                permission: permission
+                permission: permission,
+                jsonSchema: jsonSchema
             )
         case .codex:
             arguments = codexArguments(
@@ -117,7 +147,8 @@ public enum AgentCommandBuilder {
     private static func claudeArguments(
         sessionID: String?,
         systemPrompt: String?,
-        permission: AgentPermission
+        permission: AgentPermission,
+        jsonSchema: String? = nil
     ) -> [String] {
         // `--verbose` is required alongside stream-json in print mode, otherwise
         // the CLI refuses to start and we get an empty panel with no reason.
@@ -139,19 +170,37 @@ public enum AgentCommandBuilder {
         if let systemPrompt, !systemPrompt.isEmpty {
             arguments += ["--append-system-prompt", systemPrompt]
         }
+        if let jsonSchema, !jsonSchema.isEmpty {
+            arguments += ["--json-schema", jsonSchema]
+        }
 
         switch permission {
+        case .noTools:
+            // Empty string, which is how the CLI is told to disable every tool.
+            arguments += ["--tools", ""]
+
         case .readOnly:
-            // Naming the write tools is clearer than switching the whole
-            // permission mode: the agent keeps its normal behaviour and simply
-            // cannot change files. Reading and searching still work.
-            arguments += ["--disallowedTools", "Edit,Write,NotebookEdit"]
+            // The tools it HAS, not the tools it may not use. Denying the write
+            // tools left `Bash` available, which writes perfectly well — that
+            // is how a read-only panel created a file. With the list given,
+            // the write tools do not exist, so nothing is denied at run time
+            // and nothing can stop to ask.
+            arguments += ["--tools", readOnlyTools.joined(separator: ",")]
         case .acceptEdits:
-            arguments += ["--permission-mode", "acceptEdits"]
+            // `acceptEdits` accepts file edits and still stops to ask before
+            // running a command. Headless, that question reaches nobody and the
+            // run hangs. This mode is armed on purpose, behind a confirmation,
+            // and it is scoped to the working folder.
+            arguments += ["--permission-mode", "bypassPermissions"]
         }
 
         return arguments
     }
+
+    /// Everything that cannot change the machine.
+    ///
+    /// `Bash` is absent on purpose, and that is the whole point of the list.
+    static let readOnlyTools = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]
 
     private static func codexArguments(
         workingDirectory: URL,
@@ -168,10 +217,19 @@ public enum AgentCommandBuilder {
         arguments += ["--json", "--cd", workingDirectory.path]
 
         switch permission {
+        case .noTools:
+            // Codex has no flag for "no tools", so this is the tightest it
+            // offers. The note is still handed everything it needs in the
+            // prompt and has no reason to reach for anything.
+            arguments += ["--sandbox", "read-only"]
+
         case .readOnly:
             arguments += ["--sandbox", "read-only"]
         case .acceptEdits:
-            arguments += ["--sandbox", "workspace-write"]
+            // Same reason as Claude's bypass: `exec` still raises approvals for
+            // anything outside the sandbox, and headless there is nobody to
+            // raise them to.
+            arguments += ["--sandbox", "workspace-write", "--dangerously-bypass-approvals-and-sandbox"]
         }
 
         // The prompt is written to standard input, not appended here.
@@ -180,19 +238,12 @@ public enum AgentCommandBuilder {
     }
 }
 
-/// The default instruction appended to whichever agent runs.
+/// The starting value of the user's own instructions field in Settings.
 ///
-/// The single biggest quality win in the app: agents default to a thorough,
-/// essay-shaped answer, which is unreadable in a panel you glance at while
-/// talking to someone.
+/// Only a starting value now. What the agent is actually told about itself
+/// lives in `AgentContext`, which is always sent and cannot be edited away —
+/// it is the difference between an agent that knows it is in Companion and one
+/// that describes itself as a terminal session.
 public enum DefaultSystemPrompt {
-    public static let text = """
-        You are answering inside a small floating panel while the user is on a \
-        live call, sharing their screen. They are talking to another person at \
-        the same time and can only glance at you.
-
-        Lead with the answer in the first sentence. Two or three sentences is \
-        usually the whole reply. Use a code block only when the user asks for \
-        code. No preamble, no restating the question, no closing summary.
-        """
+    public static let text = AgentContext.style
 }

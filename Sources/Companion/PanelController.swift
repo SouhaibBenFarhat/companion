@@ -14,7 +14,8 @@ final class PanelController: NSObject {
     private let awareness = AwarenessCoordinator()
     /// Separate from `runner`, so a suggestion Companion decided to make on its
     /// own can never cancel an answer the user actually asked for.
-    private let suggestionRunner = AgentRunner()
+    /// One agent process for the whole call, rather than one per note.
+    private let suggestions = SuggestionSession()
 
     private var settings: Settings
     private let settingsStore: JSONFileStore<Settings>
@@ -27,6 +28,13 @@ final class PanelController: NSObject {
     /// half-message behind in the saved history.
     private var pendingAnswer = ""
     private var isReady = false
+    /// Notes already given during this call, so the same one is not given
+    /// twice in other words.
+    private var notesAlreadyGiven: [String] = []
+
+    /// Pending conversation save, so a run of settled lines writes once.
+    private var saveWork: DispatchWorkItem?
+
     /// A screenshot to attach to the next question, taken on request.
     private var pendingScreenshot: URL?
     private var queued: [String] = []
@@ -57,10 +65,16 @@ final class PanelController: NSObject {
         webView = WKWebView(frame: .zero, configuration: configuration)
 
         let size = CGSize(width: settings.panelWidth, height: settings.panelHeight)
-        let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let saved = settings.panelOriginX.flatMap { x in
             settings.panelOriginY.map { CGRect(x: x, y: $0, width: size.width, height: size.height) }
         }
+        // The display the panel was last on, not the one holding the key
+        // window. `NSScreen.main` is the latter, and this app is never
+        // frontmost, so on two displays it was routinely the wrong answer —
+        // which is how a laptop-sized panel came back sized for a monitor.
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        let fallback = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let visible = saved.flatMap { PanelPlacement.target(for: $0, among: screens) } ?? fallback
         let frame = saved.map { PanelPlacement.clamp(frame: $0, into: visible) }
             ?? PanelPlacement.defaultFrame(size: size, in: visible)
 
@@ -96,7 +110,25 @@ final class PanelController: NSObject {
         panel.contentView = backdrop
         backdrop.addSubview(webView)
         panel.delegate = self
+
+        // Unplugging a monitor, changing resolution, or switching a display's
+        // arrangement all arrive here. Without it the panel keeps a geometry
+        // that no longer exists anywhere.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitToScreen() }
+        }
         panel.isHiddenFromScreenShare = settings.hideFromScreenShare
+        applyAppearance()
+
+        // At launch, because that is the only moment Accessibility and Screen
+        // Recording are read. If a grant is not visible here it is not visible
+        // at all until the next start, and the log is the only place that fact
+        // is recorded.
+        PermissionChecker.log("launched")
 
         awareness.updateRepository(settings.repositoryURL())
         awareness.preferredInputUID = settings.microphoneDeviceUID
@@ -110,16 +142,33 @@ final class PanelController: NSObject {
         awareness.onError = { [weak self] message in
             self?.send(["type": "captureError", "message": message])
         }
+        // A finished line joins the conversation, so the call is part of the
+        // record of the work rather than a stream that evaporates when you stop
+        // listening. It survives a restart, you can scroll back to it, and the
+        // agent answers about a conversation it can see.
+        awareness.onSpokenLine = { [weak self] speaker, text in
+            guard let self else { return }
+            self.current.append(Message(role: MessageRole(spokenBy: speaker), text: text))
+            self.saveConversationSoon()
+            self.sendMessages()
+        }
+
         awareness.onTranscript = { [weak self] transcript in
             self?.send([
                 "type": "transcript",
-                "entries": transcript.entries.suffix(60).map { entry in
+                // Only what is still being revised. A settled line is a message
+                // now, and sending it here as well would draw it twice.
+                "entries": transcript.entries.filter(\.isVolatile).map { entry in
                     [
                         "id": entry.id,
                         "speaker": entry.speaker.rawValue,
                         "who": entry.speaker.title,
                         "text": entry.text,
                         "live": entry.isVolatile,
+                        // Where this sits in the call, so the panel can place
+                        // an unprompted suggestion among the lines it was
+                        // about rather than above all of them.
+                        "at": entry.startSeconds,
                     ]
                 },
             ])
@@ -159,6 +208,50 @@ final class PanelController: NSObject {
         return image
     }
 
+    // MARK: - Appearance
+
+    /// Light, dark, or whatever macOS is doing.
+    ///
+    /// Set on the window, not on the page. The panel is a blurred AppKit
+    /// material with a web view on top: the window's appearance drives that
+    /// material AND the `prefers-color-scheme` the page reads, so the two
+    /// cannot disagree. Styling the page alone would leave a light blur behind
+    /// dark content.
+    private func applyAppearance() {
+        switch settings.theme {
+        case .system: panel.appearance = nil
+        case .light: panel.appearance = NSAppearance(named: .aqua)
+        case .dark: panel.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+
+    // MARK: - Staying on screen
+
+    /// The screen the panel is actually on.
+    ///
+    /// Not `NSScreen.main`: that is the screen holding the key window, and this
+    /// app is deliberately never frontmost, so on a two-display setup it is
+    /// routinely the wrong one.
+    private var visibleFrame: CGRect? {
+        (panel.screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+    }
+
+    /// Pulls the panel back inside its display, shrinking it if it no longer
+    /// fits.
+    ///
+    /// A panel wider or taller than the screen is not merely untidy: its edges
+    /// and its drag strip are off the display, so it cannot be resized and it
+    /// cannot be moved. The only way out was to delete the settings file.
+    /// Carrying a size from a large monitor to a laptop screen did exactly
+    /// that.
+    func fitToScreen(display: Bool = true) {
+        guard let visible = visibleFrame else { return }
+        let fitted = PanelPlacement.clamp(frame: panel.frame, into: visible)
+        guard fitted != panel.frame else { return }
+        panel.setFrame(fitted, display: display)
+        rememberFrame()
+    }
+
     // MARK: - Showing and hiding
 
     var isVisible: Bool { panel.isVisible }
@@ -166,8 +259,7 @@ final class PanelController: NSObject {
     func toggle() { isVisible ? hide() : show() }
 
     func show() {
-        let visible = NSScreen.main?.visibleFrame ?? panel.frame
-        panel.setFrame(PanelPlacement.clamp(frame: panel.frame, into: visible), display: false)
+        fitToScreen(display: false)
         // Key, but never activating: the app you are presenting stays frontmost
         // while your typing comes here.
         panel.makeKeyAndOrderFront(nil)
@@ -243,6 +335,7 @@ final class PanelController: NSObject {
 
     func startListening() {
         let permissions = PermissionChecker.report()
+        PermissionChecker.log("listen requested")
         guard permissions.canListen else {
             send(["type": "captureError", "message": permissions.summary])
             showSettingsTab()
@@ -251,10 +344,39 @@ final class PanelController: NSObject {
 
         settings.awareness.enabled = true
         persistSettings()
+        awareness.engineKind = settings.transcriptionEngine
         awareness.start(settings: settings.awareness)
+        startSuggestionSession()
+    }
+
+    /// Opens the one agent process the whole call will use.
+    ///
+    /// The flags that cannot change mid-call are set here: the system prompt,
+    /// the schema, the working folder. Everything that changes per turn — the
+    /// transcript, what has already been said — goes in the message.
+    private func startSuggestionSession() {
+        guard settings.awareness.suggestionsEnabled else { return }
+        guard let executable = AgentLocator.resolve(
+            kind: settings.agent, configuredPath: settings.agentPath
+        ) else { return }
+
+        notesAlreadyGiven = []
+        suggestions.start(
+            executable: executable,
+            workingDirectory: settings.repositoryURL(),
+            systemPrompt: AgentContext.systemPrompt(
+                repository: settings.repositoryURL(),
+                hasRepository: settings.hasRepository,
+                isListening: true,
+                watching: AwarenessPrompt.watchingInstruction
+            ),
+            schema: SuggestionDecision.schema,
+            environment: AgentEnvironment.forAgent(inheriting: ProcessInfo.processInfo.environment)
+        )
     }
 
     func stopListening() {
+        suggestions.stop()
         awareness.stop()
         settings.awareness.enabled = false
         persistSettings()
@@ -267,54 +389,114 @@ final class PanelController: NSObject {
         guard settings.awareness.enabled, settings.awareness.suggestionsEnabled else { return }
         // Never while the user is waiting on an answer they asked for, and
         // never on top of a suggestion already in flight.
-        guard !runner.isRunning, !suggestionRunner.isRunning else { return }
+        guard !runner.isRunning, suggestions.isRunning else { return }
         guard let executable = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)
         else { return }
 
         let spoken = awareness.transcript.text(lastSeconds: 120)
         let screen = awareness.screenContext?.summary ?? ""
+
+        // What it has already said, so it does not say it again. Three notes
+        // about closures arrived one after another, each true and each the same.
+        let recentNotes = notesAlreadyGiven.isEmpty
+            ? ""
+            : """
+                You have already told them this during this call. Do not repeat \
+                any of it, or say the same thing in other words:
+                \(notesAlreadyGiven.map { "- \($0)" }.joined(separator: "\n"))
+                """
         let prompt = AwarenessPrompt.build(
-            question: "The last thing said was: \"\(line)\"",
+            question: """
+                Given all of that: is there anything the user needs to know \
+                right now? The last thing said was: "\(line)"
+                """,
             conversation: spoken,
-            screen: screen
+            screen: screen,
+            // Ahead of the transcript, because the transcript is a labelled
+            // script and a script asks to be continued. Underneath it, this
+            // was ignored and the panel filled with lines of dialogue.
+            instruction: """
+                You are helping one person — the user of this app — while they \
+                are on a call. Nobody else can see what you write.
+
+                Below is a transcript of that call. It is material to read, not \
+                a conversation to join.
+
+                Reply with one JSON object and nothing else:
+
+                {"speak": false, "because": "a few words"}
+
+                or
+
+                {"speak": true, "kind": "answer|correction|fact", "text": "one sentence", "because": "a few words"}
+
+                A question was asked on the call and you know the answer: \
+                speak. That is what this is for, and it is the one case where \
+                staying quiet is the wrong call. Speak even if the person who \
+                asked has started answering it themselves — the user wants your \
+                answer to hold against theirs, and by the time you are read the \
+                speaker has always moved on. The question may be split \
+                across several lines, or half-heard — "what is d-bouncing" is \
+                somebody asking what debouncing is — so read the last few lines \
+                together before deciding there was no question.
+
+                Something said is wrong and you can say what is true instead: \
+                speak, with "correction".
+
+                They are missing a fact they would want — a limit, a version, a \
+                name, a number: speak, with "fact".
+
+                Anything else is {"speak": false}: a remark, a summary, \
+                agreement with what was just said, an explanation of something \
+                the speaker already explained correctly, or anything about you \
+                rather than about their work.
+
+                \(recentNotes)
+                """
         )
 
-        let command = AgentCommandBuilder.build(
-            kind: settings.agent,
-            executable: executable,
-            prompt: prompt,
-            workingDirectory: settings.repositoryURL(),
-            sessionID: nil,
-            systemPrompt: AwarenessPrompt.watchingInstruction,
-            permission: .readOnly
-        )
-
-        var answer = ""
         SessionLog.shared.write("suggest", "thinking, reason=\(reason.rawValue)")
-        suggestionRunner.run(
-            command: command,
-            kind: settings.agent,
-            onEvent: { event in
-                if case .assistantText(let chunk) = event { answer += chunk }
-            },
-            onFinish: { [weak self] _, _ in
-                guard let self else { return }
-                let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard self.awareness.admitSuggestion(text) else { return }
-                // Kept only if the user allows the transcript to be stored.
-                // Otherwise it is shown and forgotten, which is what "do not
-                // persist" has to mean or the setting is decoration.
-                if self.settings.awareness.persistTranscript {
-                    self.current.append(Message(role: .assistant, text: text))
-                    try? self.conversations.save(self.current)
-                }
-                self.send([
-                    "type": "suggestion",
-                    "text": text,
-                    "reason": reason.rawValue,
-                ])
-            }
-        )
+
+        Task { [weak self] in
+            guard let self else { return }
+            // One process for the whole call. Spawning a fresh CLI per turn
+            // cost about two seconds before the model had read a word — a
+            // third of the delay, paid again on every line somebody speaks.
+            let answer = await self.suggestions.ask(prompt)
+            self.handleSuggestion(answer)
+        }
+    }
+
+    /// Turns one answer into a note, or into silence.
+    private func handleSuggestion(_ answer: String?) {
+        // A decision, not prose. Anything that is not one is silence: a missed
+        // note costs nothing, a wrong one is an interruption.
+        guard let answer, let decision = SuggestionDecision.parse(answer) else {
+            SessionLog.shared.write("suggest", "no decision in the reply, staying quiet")
+            return
+        }
+        guard let spoken = decision.note else {
+            SessionLog.shared.write("suggest", "quiet: \(decision.because ?? "no reason given")")
+            return
+        }
+        // The filters stay as a backstop for what slips through the shape.
+        guard let text = SuggestionCleaner.clean(spoken) else {
+            SessionLog.shared.write("suggest", "dropped, model wrote dialogue")
+            return
+        }
+        guard awareness.admitSuggestion(text, answersAQuestion: decision.kind == .answer) else {
+            return
+        }
+
+        notesAlreadyGiven.append(text)
+        if notesAlreadyGiven.count > 6 { notesAlreadyGiven.removeFirst() }
+
+        // A message, so it sits where it happened. In its own list it could
+        // only ever be drawn after every line, including the lines it was
+        // about.
+        current.append(Message(role: .noticed, text: text))
+        saveConversationSoon()
+        sendMessages()
     }
 
     /// Takes one picture of the window in front, for the next question.
@@ -361,6 +543,36 @@ final class PanelController: NSObject {
 
     // MARK: - State
 
+    /// Just the messages, for a line arriving mid-call.
+    ///
+    /// The full state payload asks the agent binary whether it still runs and
+    /// rebuilds every permission, every device and every conversation. A call
+    /// produces a line every few seconds, and doing all of that each time is
+    /// work nobody asked for.
+    private func sendMessages() {
+        send([
+            "type": "messages",
+            "messages": current.messages.map {
+                ["id": $0.id, "role": $0.role.rawValue, "text": $0.text]
+            },
+        ])
+    }
+
+    /// Saves the conversation soon, not on every line.
+    ///
+    /// Speech settles several times a second at times, and writing the whole
+    /// file each time is a lot of disk for a transcript nobody is reading yet.
+    /// Two seconds is short enough that a crash costs a sentence.
+    private func saveConversationSoon() {
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            try? self.conversations.save(self.current)
+        }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
     private func sendState() {
         let resolved = AgentLocator.resolve(kind: settings.agent, configuredPath: settings.agentPath)
         let agentPath = resolved?.path
@@ -396,6 +608,9 @@ final class PanelController: NSObject {
                 "persistTranscript": settings.awareness.persistTranscript,
                 "microphoneDeviceUID": settings.microphoneDeviceUID,
                 "hideFromScreenShare": settings.hideFromScreenShare,
+                "theme": settings.theme.rawValue,
+                "transcriptionEngine": settings.transcriptionEngine.rawValue,
+                "hasRepository": settings.hasRepository,
                 "microphoneMissing": AudioInputSelection.isPreferredMissing(
                     preferredUID: settings.microphoneDeviceUID,
                     available: AudioDevices.inputs()
@@ -426,6 +641,9 @@ final class PanelController: NSObject {
                         "reason": permission.reason,
                         "state": permissions.state(of: permission).rawValue,
                         "needsRestart": permission.needsRestartAfterGranting,
+                        "resetCommand": permission.resetCommand(
+                            bundleIdentifier: Bundle.main.bundleIdentifier ?? ""
+                        ),
                     ]
                 },
             ],
@@ -487,7 +705,13 @@ final class PanelController: NSObject {
             prompt: prompt,
             workingDirectory: settings.repositoryURL(),
             sessionID: current.agentSessionID,
-            systemPrompt: settings.systemPrompt,
+            systemPrompt: AgentContext.systemPrompt(
+                repository: settings.repositoryURL(),
+                hasRepository: settings.hasRepository,
+                isListening: isListening,
+                watching: isListening ? AwarenessPrompt.watchingInstruction : "",
+                extra: settings.systemPrompt
+            ),
             permission: settings.permission
         )
 
@@ -502,6 +726,11 @@ final class PanelController: NSObject {
 
     private func handle(_ event: AgentEvent) {
         switch event {
+        case .structuredOutput:
+            // Only the unprompted note asks for a shape, and it reads the
+            // object itself rather than through here.
+            break
+
         case .sessionStarted(let id):
             // Storing this is what makes "no, do it the other way" work: the
             // next question resumes an agent that still remembers what it read.
@@ -617,6 +846,12 @@ extension PanelController: WKScriptMessageHandler {
             panel.setFrameOrigin(moved.origin)
             rememberFrame()
 
+        case "dragEnd":
+            // Only once the pointer is up. Clamping on every step would pin the
+            // panel to the display it started on, and you could never drag it
+            // to another one.
+            fitToScreen()
+
         case "newConversation":
             runner.cancel()
             current = Conversation(repositoryPath: settings.repositoryURL().path, agent: settings.agent)
@@ -653,10 +888,37 @@ extension PanelController: WKScriptMessageHandler {
         case "lookAtScreen":
             captureScreen()
 
+        case "relaunch":
+            // Accessibility and Screen Recording are read once, at launch. A
+            // grant made while the app is running reaches nothing, and no
+            // amount of checking again will pick it up — so the panel offers
+            // the only thing that works instead of describing it.
+            let url = Bundle.main.bundleURL
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            SessionLog.shared.write("panel", "relaunching for permissions")
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
+                DispatchQueue.main.async { NSApp.terminate(nil) }
+            }
+
+        case "dismissMessage":
+            guard let id = body["id"] as? String else { return }
+            current.remove(id: id)
+            saveConversationSoon()
+            sendMessages()
+
         case "refreshPermissions":
             // Cheap, and the only way to notice a grant made in System Settings
             // while the panel was open.
+            PermissionChecker.log("checked again")
             sendState()
+
+        case "openLink":
+            // A link in an answer must not navigate the panel. There is no
+            // address bar and no back button here, so following one inside the
+            // web view loses the conversation with no way back.
+            guard let raw = body["url"] as? String, let url = ExternalLink.url(from: raw) else { return }
+            NSWorkspace.shared.open(url)
 
         case "signIn":
             SignIn.openTerminal(
@@ -684,6 +946,17 @@ extension PanelController: WKScriptMessageHandler {
                 }
             }
 
+            if let value = body["persistTranscript"] as? Bool {
+                settings.awareness.persistTranscript = value
+            }
+            if let raw = body["transcriptionEngine"] as? String,
+               let engine = TranscriptionEngineKind(rawValue: raw) {
+                settings.transcriptionEngine = engine
+            }
+            if let raw = body["theme"] as? String, let theme = Appearance(rawValue: raw), theme != settings.theme {
+                settings.theme = theme
+                applyAppearance()
+            }
             if let value = body["hideFromScreenShare"] as? Bool, value != settings.hideFromScreenShare {
                 settings.hideFromScreenShare = value
                 panel.isHiddenFromScreenShare = value

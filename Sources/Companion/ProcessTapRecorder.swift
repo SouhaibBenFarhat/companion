@@ -19,6 +19,9 @@ final class ProcessTapRecorder {
     static let namePrefix = "Companion Tap"
 
     private let ring: AudioRingBuffer
+    /// Scratch for the stereo-to-mono mix, allocated once. The IO block runs
+    /// under a real-time deadline and must not allocate.
+    private var mixdown = [Float](repeating: 0, count: 16_384)
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
@@ -138,6 +141,11 @@ final class ProcessTapRecorder {
 
         // Captured now, so the real-time block never touches a property.
         let rate = described.mSampleRate
+        SessionLog.shared.write(
+            "tap",
+            "format \(rate) Hz, \(described.mChannelsPerFrame) ch, \(described.mBitsPerChannel) bit, "
+                + "interleaved=\(described.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0)"
+        )
 
         // Weak, so a late block after teardown cannot resurrect this object.
         let procStatus = AudioDeviceCreateIOProcIDWithBlock(
@@ -150,14 +158,47 @@ final class ProcessTapRecorder {
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
             guard let first = buffers.first, let raw = first.mData else { return }
 
-            let frameCount = Int(first.mDataByteSize) / MemoryLayout<Float>.size
-            let samples = UnsafeBufferPointer<Float>(
+            // Floats, not frames.
+            //
+            // The tap delivers 48 kHz stereo Float32, interleaved — I checked
+            // the format rather than assuming it. `mDataByteSize / 4` counts
+            // every float, so a stereo block reported twice as many frames as
+            // it held, and the left and right samples went into a mono ring as
+            // if they were consecutive in time. Combined with the chunk then
+            // being labelled 16 kHz, a tenth of a second of the call arrived
+            // claiming to be six tenths, of the wrong samples.
+            let floats = Int(first.mDataByteSize) / MemoryLayout<Float>.size
+            let channels = max(1, Int(first.mNumberChannels))
+            let frames = floats / channels
+            guard frames > 0 else { return }
+
+            let source = UnsafeBufferPointer<Float>(
                 start: raw.assumingMemoryBound(to: Float.self),
-                count: frameCount
+                count: floats
             )
-            // Host time and samples are recorded together, so a consumer can
-            // never pair a batch with a timestamp from a later batch.
-            self.ring.write(samples, hostTime: inputTime.pointee.mHostTime, sampleRate: rate)
+
+            if channels == 1 {
+                self.ring.write(source, hostTime: inputTime.pointee.mHostTime, sampleRate: rate)
+            } else {
+                // Averaged down to mono, which is what the transcriber wants
+                // and what the ring holds. Taking one channel would lose
+                // anyone panned to the other.
+                self.mixdown.withUnsafeMutableBufferPointer { mono in
+                    let count = min(frames, mono.count)
+                    for frame in 0..<count {
+                        var total: Float = 0
+                        for channel in 0..<channels {
+                            total += source[frame * channels + channel]
+                        }
+                        mono[frame] = total / Float(channels)
+                    }
+                    self.ring.write(
+                        UnsafeBufferPointer(rebasing: mono[0..<count]),
+                        hostTime: inputTime.pointee.mHostTime,
+                        sampleRate: rate
+                    )
+                }
+            }
         }
 
         guard procStatus == noErr, ioProcID != nil else {

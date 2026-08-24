@@ -39,6 +39,28 @@ public enum PanelPlacement {
         return CGRect(origin: CGPoint(x: x, y: y), size: size)
     }
 
+    /// Which display's visible area a frame belongs to.
+    ///
+    /// Most overlap wins, the rule AppKit uses for `NSWindow.screen`. Falling
+    /// back to the first entry matters on the case this exists for: the display
+    /// a panel was last saved on has been unplugged, so it overlaps nothing.
+    public static func target(for frame: CGRect, among visibles: [CGRect]) -> CGRect? {
+        guard let first = visibles.first else { return nil }
+
+        var best: CGRect?
+        var bestArea: CGFloat = 0
+        for visible in visibles {
+            let overlap = visible.intersection(frame)
+            guard !overlap.isNull else { continue }
+            let area = overlap.width * overlap.height
+            if area > bestArea {
+                bestArea = area
+                best = visible
+            }
+        }
+        return best ?? first
+    }
+
     /// Default position for a first launch: right-hand side, vertically centred.
     /// Out of the way of the content you are presenting, which tends to sit left.
     public static func defaultFrame(size: CGSize, in visible: CGRect, margin: CGFloat = margin) -> CGRect {

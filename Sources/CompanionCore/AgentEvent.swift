@@ -16,6 +16,13 @@ public enum AgentEvent: Equatable, Sendable {
     case toolUse(name: String)
     /// The run ended.
     case finished(result: String?, isError: Bool)
+    /// The object the model was made to produce, when a schema was given.
+    ///
+    /// Arrives already validated: the CLI turns the schema into a tool, the
+    /// model calls it, and the runtime checks the arguments against the schema
+    /// before we ever see them. Prose asking for JSON is a request; this is a
+    /// shape the reply cannot escape.
+    case structuredOutput(String)
 }
 
 /// Turns one output line into zero or more `AgentEvent`s.
@@ -90,6 +97,15 @@ public enum AgentEventDecoder {
             }
 
         case "result":
+            // Sent alongside the finish, not instead of it: `result` is empty
+            // when a schema was used, because the answer went into the tool
+            // call rather than into the text.
+            if let object = json["structured_output"],
+               let data = try? JSONSerialization.data(withJSONObject: object),
+               let text = String(data: data, encoding: .utf8) {
+                let isError = json["is_error"] as? Bool ?? false
+                return [.structuredOutput(text), .finished(result: json["result"] as? String, isError: isError)]
+            }
             let isError = json["is_error"] as? Bool ?? false
             return [.finished(result: json["result"] as? String, isError: isError)]
 

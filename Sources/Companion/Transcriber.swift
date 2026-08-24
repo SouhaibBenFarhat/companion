@@ -10,7 +10,7 @@ import Speech
 /// older recogniser, whose server route restarts every minute and cannot
 /// promise on-device.
 @available(macOS 26.0, *)
-final class Transcriber {
+final class Transcriber: TranscriptionEngine {
     let speaker: CaptureSpeaker
 
     /// Settled text, with the moment it started.
@@ -25,6 +25,13 @@ final class Transcriber {
     private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
     private var reservedLocale: Locale?
+
+    /// How far into the listening session this stream began.
+    ///
+    /// The analyzer counts from zero for each stream, so this is what puts one
+    /// speaker's words in the right place relative to the other's. One number,
+    /// written once, that never touches the framework.
+    var sessionOffset: TimeInterval = 0
 
     /// The format the analyzer asked for.
     ///
@@ -76,6 +83,10 @@ final class Transcriber {
             return
         }
         requiredFormat = format
+        SessionLog.shared.write(
+            "transcribe",
+            "\(speaker) analyzer wants \(format.sampleRate) Hz, \(format.channelCount) ch, \(format.commonFormat.rawValue)"
+        )
 
         do {
             try await analyzer.prepareToAnalyze(in: format)
@@ -99,6 +110,13 @@ final class Transcriber {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
+                // Logged as well as shown. This is the one failure that ends
+                // transcription for the rest of the call, and it was reaching
+                // the panel without leaving a trace anywhere to diagnose from.
+                SessionLog.shared.write(
+                    "transcribe",
+                    "\(self.speaker) stream failed: \(error.localizedDescription)"
+                )
                 await MainActor.run { self.onError?(error.localizedDescription) }
             }
         }
@@ -144,11 +162,67 @@ final class Transcriber {
     /// `startTime` is what puts the two streams on one clock — each analyzer's
     /// own timeline starts at zero, so without it the transcript can show an
     /// answer before the question.
-    func append(_ buffer: AVAudioPCMBuffer, startTime: CMTime) {
-        guard let continuation = inputContinuation, let required = requiredFormat else { return }
+    /// Feeds audio in, converted to whatever the analyzer asked for.
+    ///
+    /// No start time, deliberately.
+    ///
+    /// `bufferStartTime` is not "where this sits on my timeline". The analyzer
+    /// reads it as a promise that each buffer begins exactly where the last one
+    /// ended — start[n] == start[n-1] + frames[n-1] / rate — and it measures in
+    /// frames. Companion was supplying seconds off the host clock, rounded to
+    /// whole milliseconds. A 4096-frame callback at 48 kHz is 85.3333 ms of real
+    /// time but 1365 frames at 16 kHz, which is 85.3125 ms of analyzer time,
+    /// sent as 85. Every buffer landed a third of a millisecond inside the one
+    /// before it, and the whole sequence was rejected on the second buffer with
+    /// "Audio input timestamp overlaps or precedes prior audio input".
+    ///
+    /// A wall clock in seconds and a frame counter cannot be made to agree, so
+    /// no timescale, clamp or guard could ever have fixed it — which is why one
+    /// origin across rebuilds, clamping negatives and nudging forward all
+    /// failed. Omitting it lets the analyzer keep its own position by adding up
+    /// frames, which is contiguous by construction.
+    ///
+    /// Ordering the two speakers against each other is Companion's job, and it
+    /// is done with `sessionOffset` where it cannot be rejected by a framework.
+    /// The session time is deliberately ignored.
+    ///
+    /// `SpeechAnalyzer` keeps its own position by counting frames. Handing it a
+    /// wall-clock time is exactly the mistake that took six attempts to find —
+    /// see the note on the buffer overload below. Companion orders the two
+    /// speakers with `sessionOffset` instead.
+    func append(_ chunk: PCMChunk, at sessionSeconds: TimeInterval) {
+        guard let buffer = Self.makeBuffer(from: chunk) else { return }
+        append(buffer)
+    }
 
+    /// Wraps a chunk in a buffer that says what it actually is — built from the
+    /// chunk's own sample rate, never from one decided elsewhere.
+    private static func makeBuffer(from chunk: PCMChunk) -> AVAudioPCMBuffer? {
+        guard !chunk.samples.isEmpty,
+              let format = AVAudioFormat(
+                  commonFormat: .pcmFormatFloat32,
+                  sampleRate: chunk.sampleRate,
+                  channels: 1,
+                  interleaved: false
+              ),
+              let buffer = AVAudioPCMBuffer(
+                  pcmFormat: format,
+                  frameCapacity: AVAudioFrameCount(chunk.samples.count)
+              ),
+              let channel = buffer.floatChannelData?[0]
+        else { return nil }
+
+        buffer.frameLength = AVAudioFrameCount(chunk.samples.count)
+        chunk.samples.withUnsafeBufferPointer { source in
+            channel.update(from: source.baseAddress!, count: source.count)
+        }
+        return buffer
+    }
+
+    func append(_ buffer: AVAudioPCMBuffer) {
+        guard let continuation = inputContinuation, let required = requiredFormat else { return }
         guard let converted = convert(buffer, to: required) else { return }
-        continuation.yield(AnalyzerInput(buffer: converted, bufferStartTime: startTime))
+        continuation.yield(AnalyzerInput(buffer: converted))
     }
 
     /// Converts into the analyzer's format, reusing the converter across
@@ -222,7 +296,8 @@ final class Transcriber {
         let text = String(result.text.characters)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
-        let start = result.range.start.seconds
+        // Where this sits in the call, not just in this stream.
+        let start = sessionOffset + result.range.start.seconds
 
         Task { @MainActor [weak self] in
             guard let self else { return }
