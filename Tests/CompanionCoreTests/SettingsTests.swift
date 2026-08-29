@@ -74,6 +74,19 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(settings.hideFromScreenShare)
     }
 
+    /// Watching observes, so it ships off — the rule every observing feature
+    /// in this app follows.
+    func testScreenWatchingIsOffByDefault() {
+        XCTAssertFalse(Settings().watchScreen)
+    }
+
+    /// An older settings file must not switch screen watching on: the user
+    /// never agreed to it.
+    func testAnOlderFileDoesNotStartWatching() throws {
+        let settings = try JSONDecoder().decode(Settings.self, from: Data(#"{"agent":"claude"}"#.utf8))
+        XCTAssertFalse(settings.watchScreen)
+    }
+
     func testPanelDefaultsAreLargeEnoughToRead() {
         // The panel only covers the user's own view — viewers of a shared
         // screen lose nothing — so there is no reason for a cramped strip.

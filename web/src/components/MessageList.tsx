@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
-import { Button, Callout, LiveDot, Notice, Pulse, Surface, cx } from '../ui'
+import { Button, Callout, IconButton, LiveDot, Menu, MenuItem, Notice, Pulse, Surface, cx } from '../ui'
+import { MoreIcon, iconSize, iconStroke } from '../ui/icons'
 import { send } from '../lib/bridge'
 import type { Msg, TranscriptLine } from '../lib/types'
 
@@ -17,7 +18,15 @@ function Answer({ text }: { text: string }) {
   )
 }
 
-function Bubble({ message }: { message: Msg }) {
+function Bubble({
+  message,
+  onReply,
+  replyPending,
+}: {
+  message: Msg
+  onReply: (id: string) => void
+  replyPending: boolean
+}) {
   if (message.role === 'noticed') {
     return (
       <Callout
@@ -51,6 +60,8 @@ function Bubble({ message }: { message: Msg }) {
           live: false,
           at: 0,
         }}
+        onReply={() => onReply(message.id)}
+        replyPending={replyPending}
       />
     )
   }
@@ -77,11 +88,66 @@ function Bubble({ message }: { message: Msg }) {
  * Your side sits right, theirs left, matching where their typed equivalents
  * would be.
  */
-function Spoken({ line }: { line: TranscriptLine }) {
+function Spoken({
+  line,
+  onReply,
+  replyPending = false,
+}: {
+  line: TranscriptLine
+  /** Absent on the live line — it is still being revised and has no settled id. */
+  onReply?: () => void
+  /** A reply to this line is being prepared; the control shows it cooking. */
+  replyPending?: boolean
+}) {
   const mine = line.speaker === 'me'
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  // A name, so a screen reader can tell dozens of these apart — but a name,
+  // not the whole utterance read twice.
+  const snippet = line.text.length > 40 ? `${line.text.slice(0, 40)}…` : line.text
+
+  // Beside the bubble, centred against it, and only shown while the pointer
+  // is over the row — a control on every line of a call reads as noise.
+  // Hidden with a transform, not with `visibility`: a hidden subtree cannot
+  // take keyboard focus, so the button would leave the tab order; scaled to
+  // nothing it stays reachable, and focusing it brings it back. It also stays
+  // while its menu is open, or moving the pointer into the menu would fold
+  // the trigger away under it. Never disabled: while an answer is already
+  // streaming Reply does nothing, and with no agent found it produces the
+  // notice that names the fix.
+  const reply = onReply && !line.live && (
+    <div
+      className={cx(
+        'scale-0 focus-within:scale-100 group-hover:scale-100',
+        (menuOpen || replyPending) && 'scale-100',
+      )}
+    >
+      <Menu
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        align={mine ? 'end' : 'start'}
+        width="fit"
+        trigger={
+          <IconButton
+            label={`Options for ${line.who}: ${snippet}`}
+            hint={replyPending ? 'Preparing a reply…' : 'Options for this line'}
+            size="xs"
+            busy={replyPending}
+          >
+            <MoreIcon size={iconSize} strokeWidth={iconStroke} />
+          </IconButton>
+        }
+      >
+        <MenuItem label="Reply" onSelect={onReply} centered />
+      </Menu>
+    </div>
+  )
 
   return (
-    <div className={cx('flex', mine ? 'justify-end' : 'justify-start')}>
+    // The bubble comes first in DOM order on both sides, so assistive tech
+    // always reads the line before the control that answers it. The user's
+    // own side is mirrored visually, not structurally.
+    <div className={cx('group flex items-center gap-1', mine && 'flex-row-reverse')}>
       <div
         data-surface="well"
         className={cx(
@@ -97,6 +163,7 @@ function Spoken({ line }: { line: TranscriptLine }) {
           {line.text}
         </span>
       </div>
+      {reply}
     </div>
   )
 }
@@ -129,6 +196,8 @@ export function MessageList({
   agentFound,
   agentTitle,
   transcript,
+  replyingTo,
+  onReplyPending,
 }: {
   messages: Msg[]
   streaming: string
@@ -140,6 +209,9 @@ export function MessageList({
   agentTitle: string
   /** What is being heard right now. Empty unless listening. */
   transcript: TranscriptLine[]
+  /** The spoken line a reply is being prepared for, or null. */
+  replyingTo: string | null
+  onReplyPending: (id: string) => void
 }) {
   const bottom = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
@@ -169,6 +241,20 @@ export function MessageList({
     bottom.current?.scrollIntoView({ block: 'end' })
   }, [signature])
 
+  // A reply streams in at the bottom of the list, but the line being replied
+  // to may be far above it — the user scrolled up to find it, which switched
+  // following off. The tap is a request to see the answer, so it re-pins the
+  // list; without this the question, "Thinking" and the whole answer would
+  // play out below the viewport with nothing visible changing.
+  const replyTo = (id: string) => {
+    // Swift drops the request silently while a run is going; sending anyway
+    // would mark this bubble as cooking something that never started.
+    if (busy) return
+    onReplyPending(id)
+    following.current = true
+    send({ type: 'replyToLine', id })
+  }
+
   const empty =
     messages.length === 0 && !streaming && !busy && transcript.length === 0
 
@@ -197,7 +283,12 @@ export function MessageList({
       )}
 
       {messages.map((message) => (
-        <Bubble key={message.id} message={message} />
+        <Bubble
+          key={message.id}
+          message={message}
+          onReply={replyTo}
+          replyPending={message.id === replyingTo}
+        />
       ))}
 
       {/* After the messages, because it is happening now. */}

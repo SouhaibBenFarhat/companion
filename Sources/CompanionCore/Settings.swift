@@ -63,6 +63,16 @@ public struct Settings: Codable, Equatable, Sendable {
     /// is a window nobody can show or screenshot.
     public var hideFromScreenShare: Bool
 
+    /// Whether the screen is watched outside of a call.
+    ///
+    /// While listening, the screen watcher always runs — the call brain needs
+    /// it. This is the standing version: app, window, file and visible code
+    /// travel with every typed question too, so "why is this failing?" can be
+    /// answered about the error actually on screen. Off by default, like
+    /// everything that observes; it reads text through Accessibility and
+    /// never takes a picture.
+    public var watchScreen: Bool
+
     /// Show/hide shortcut. Carbon key code plus modifier mask.
     public var hotKeyCode: UInt32
     public var hotKeyModifiers: UInt32
@@ -89,6 +99,7 @@ public struct Settings: Codable, Equatable, Sendable {
         panelWasVisible: Bool = false,
         microphoneDeviceUID: String = "",
         hideFromScreenShare: Bool = true,
+        watchScreen: Bool = false,
         hotKeyCode: UInt32 = 49, // Space
         hotKeyModifiers: UInt32 = 2048, // Option
         transcriptionEngine: TranscriptionEngineKind = .whisper,
@@ -107,6 +118,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.panelWasVisible = panelWasVisible
         self.microphoneDeviceUID = microphoneDeviceUID
         self.hideFromScreenShare = hideFromScreenShare
+        self.watchScreen = watchScreen
         self.hotKeyCode = hotKeyCode
         self.hotKeyModifiers = hotKeyModifiers
         self.transcriptionEngine = transcriptionEngine
@@ -133,6 +145,8 @@ public struct Settings: Codable, Equatable, Sendable {
             ?? defaults.microphoneDeviceUID
         hideFromScreenShare = try container.decodeIfPresent(Bool.self, forKey: .hideFromScreenShare)
             ?? defaults.hideFromScreenShare
+        watchScreen = try container.decodeIfPresent(Bool.self, forKey: .watchScreen)
+            ?? defaults.watchScreen
         hotKeyCode = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyCode) ?? defaults.hotKeyCode
         hotKeyModifiers = try container.decodeIfPresent(UInt32.self, forKey: .hotKeyModifiers)
             ?? defaults.hotKeyModifiers

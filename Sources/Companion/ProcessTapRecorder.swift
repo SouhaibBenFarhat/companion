@@ -27,7 +27,12 @@ final class ProcessTapRecorder {
     private var ioProcID: AudioDeviceIOProcID?
     private var format: AVAudioFormat?
 
-    init(ringCapacity: Int = 48_000 * 2) {
+    /// Six seconds of slack at the tap's 48 kHz. The old default was the same
+    /// frame count the microphone uses — but the microphone's ring holds
+    /// 16 kHz frames, so the identical number bought it six seconds and this
+    /// one two. A pump stalled past two seconds silently dropped the oldest of
+    /// the call's words, and nothing counted the loss.
+    init(ringCapacity: Int = 48_000 * 6) {
         ring = AudioRingBuffer(capacity: ringCapacity)
     }
 

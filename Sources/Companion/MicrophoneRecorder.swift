@@ -13,10 +13,16 @@ import Foundation
 /// 2. Turn on voice processing before reading the format. It changes the
 ///    format, and a mismatch between the format passed to `installTap` and the
 ///    node's real one raises the same uncatchable exception.
-/// 3. Connect the input to the mixer at zero volume. Voice processing only
-///    engages when there is a rendering graph; without it the setting is
-///    accepted and does nothing. Zero volume is what stops the user hearing
-///    themselves.
+/// 3. With voice processing on, the input format grows echo-reference
+///    channels — seven or nine on this hardware, not one. The converter must
+///    take channel 0 alone: the default downmix of that layout converts every
+///    buffer without error and writes silence, which is how listening once
+///    ran with a live engine, a started log line, and no words. And a chosen
+///    device goes on the unit's INPUT element — the voice-processing unit
+///    owns both directions, and binding a capture-only device at global scope
+///    points its output half at a device that cannot play, after which the
+///    engine either refuses to start (-10875) or starts with a tap that
+///    never fires. All of this was measured on hardware, not inferred.
 final class MicrophoneRecorder {
     /// Replaced on every attempt, never reused.
     ///
@@ -52,6 +58,13 @@ final class MicrophoneRecorder {
 
     func drain(maximum: Int = .max) -> (samples: [Float], hostTime: UInt64) { ring.drain(maximum: maximum) }
     var droppedFrames: Int { ring.droppedFrames }
+
+    /// Whether the engine is actually delivering.
+    ///
+    /// `AVAudioEngine` stops itself on a configuration change and does not
+    /// restart. A caller that decided a notification was ignorable needs a way
+    /// to tell quiet from dead — the levels are zero in both.
+    var isEngineRunning: Bool { engine.isRunning }
 
     enum MicrophoneError: LocalizedError {
         case notPermitted
@@ -96,6 +109,12 @@ final class MicrophoneRecorder {
         stop()
         ring.reset()
         engine = AVAudioEngine()
+        // Reset here, not trusted from last time: an open that threw between
+        // enabling voice processing and installing the tap leaves stop() with
+        // nothing to tear down, so the flag survives — and it now decides the
+        // device element and the channel map, where stale-true is not
+        // harmless.
+        voiceProcessingActive = false
 
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             throw MicrophoneError.notPermitted
@@ -136,11 +155,25 @@ final class MicrophoneRecorder {
         // Still before the format is read, because the converter is built from
         // that format and the device decides it.
         if let device {
-            if AudioDevices.use(device, on: engine) {
+            // Only a device the user actually chose arrives here — the caller
+            // hands the resolver's fallback as nil. Binding the fallback would
+            // only restate the system default, riskily, while pinning it —
+            // and "empty means the system default" is meant to follow the
+            // default when macOS moves it, not freeze it at start time.
+            if AudioDevices.use(
+                device,
+                on: engine,
+                // The voice-processing unit carries both directions. Its
+                // device belongs on the input element; set at global scope it
+                // reaches the output half too, and a microphone cannot play.
+                element: voiceProcessingActive ? 1 : 0
+            ) {
                 SessionLog.shared.write("mic", "using \(device.name)")
             } else {
                 SessionLog.shared.write("mic", "\(device.name) refused; using the system default")
             }
+        } else {
+            SessionLog.shared.write("mic", "using the system default microphone")
         }
 
         // Nothing is connected to the mixer, on purpose.
@@ -164,8 +197,20 @@ final class MicrophoneRecorder {
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw MicrophoneError.noInputFormat
         }
+        SessionLog.shared.write(
+            "mic",
+            "format \(inputFormat.sampleRate) Hz, \(inputFormat.channelCount) ch, "
+                + "voice processing \(voiceProcessingActive ? "on" : "off")"
+        )
         guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
             throw MicrophoneError.converterUnavailable
+        }
+        if voiceProcessingActive, inputFormat.channelCount > 1 {
+            // The processed voice is channel 0; the rest are echo-reference
+            // channels. Left to its own downmix of that layout, the converter
+            // reports success on every buffer and writes zeros — the failure
+            // that looks like a user who is not speaking.
+            converter.channelMap = [0]
         }
         self.converter = converter
 

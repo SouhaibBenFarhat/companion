@@ -91,13 +91,7 @@ final class AwarenessCoordinator {
         gateState = SuggestionGate.State()
         capture.start(settings: settings)
 
-        let watcher = ScreenAwareness(repository: repository)
-        watcher.onContext = { [weak self] context in
-            self?.screenContext = context
-            self?.onScreen?(context)
-        }
-        watcher.start()
-        screen = watcher
+        startScreenWatcher()
 
         for speaker in CaptureSpeaker.allCases {
             guard let engine = makeEngine(for: speaker, settings: settings) else { continue }
@@ -174,12 +168,60 @@ final class AwarenessCoordinator {
         TranscriptFile.directory(in: StorageLocation.applicationSupportDirectory())
     }
 
+    /// Whether the screen stays watched outside of a call.
+    ///
+    /// Listening always brings the watcher up — the call brain needs it. This
+    /// keeps it up between calls too, so typed questions carry the screen. It
+    /// is the standing setting, not a session state: `stop()` consults it to
+    /// decide whether the watcher goes down with the capture graph.
+    var watchScreenAlways = false
+
+    /// Starts or stops the standing watcher, without touching a live call.
+    func setWatchingScreen(_ enabled: Bool) {
+        watchScreenAlways = enabled
+        if enabled {
+            startScreenWatcher()
+        } else if !isListening {
+            stopScreenWatcher()
+        }
+        // While listening, turning the setting off changes nothing now — the
+        // call still needs the screen — and `stop()` honours it afterwards.
+    }
+
+    /// Whether the screen is actually being read right now — as opposed to
+    /// merely asked for. The difference is the Accessibility grant.
+    var isWatchingScreen: Bool { screen?.isRunning == true }
+
+    private func startScreenWatcher() {
+        if screen?.isRunning == true { return }
+        screen = nil
+        let watcher = ScreenAwareness(repository: repository)
+        watcher.onContext = { [weak self] context in
+            self?.screenContext = context
+            self?.onScreen?(context)
+        }
+        watcher.start()
+        // A watcher that never actually started — the Accessibility grant was
+        // missing — is not kept. Kept, it pinned the nil-guard above, and
+        // every later attempt, including the next call, silently did nothing;
+        // dropped, each start is a fresh try, which is what makes granting
+        // the permission ever take effect.
+        guard watcher.isRunning else { return }
+        screen = watcher
+    }
+
+    private func stopScreenWatcher() {
+        screen?.stop()
+        screen = nil
+        // Cleared, not kept: a question asked tomorrow must not carry the
+        // window that happened to be open when watching was turned off.
+        screenContext = nil
+    }
+
     func stop() {
         transcriptFile = nil
         capture.stop()
-        screen?.stop()
-        screen = nil
-        screenContext = nil
+        if !watchScreenAlways { stopScreenWatcher() }
 
         for engine in engines.values {
             Task { await engine.stop() }

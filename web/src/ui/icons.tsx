@@ -24,6 +24,7 @@ export {
   Image as ScreenshotIcon,
   Square as StopIcon,
   MessageSquare as ChatIcon,
+  Ellipsis as MoreIcon,
 } from 'lucide-react'
 
 /** Panel-sized default. Lucide draws on a 24px grid; 14 suits 13px text. */
