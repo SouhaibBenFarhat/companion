@@ -30,6 +30,10 @@ export function App() {
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
   const [screen, setScreen] = useState('')
   const [screenshot, setScreenshot] = useState<'capturing' | 'ready' | 'failed' | 'none'>('none')
+  // Which spoken line a reply was requested for. The tapped bubble's control
+  // pulses until the run ends, so the wait has a visible anchor — the
+  // "Thinking" row at the bottom says something is happening, not for whom.
+  const [replyingTo, setReplyingTo] = useState<string | null>(null)
 
   useEffect(() => {
     const stop = listen((payload) => {
@@ -60,6 +64,10 @@ export function App() {
         case 'done':
           setBusy(false)
           setTool(null)
+          // Every run ends in `done` — answer, error, cancel, or a missing
+          // agent — so this is the one place the reply anchor can be cleared
+          // without leaving it pulsing forever on a failed run.
+          setReplyingTo(null)
           // Stop pacing the moment the run ends — waiting out the animation
           // after the answer is complete would just be a delay.
           flushStreaming()
@@ -125,6 +133,7 @@ export function App() {
         hasRepository={state.hasRepository}
         conversations={state.conversations}
         currentId={state.currentId}
+        canExport={state.messages.length > 0}
         historyOpen={showHistory}
         settingsOpen={showSettings}
         onChat={() => {
@@ -140,6 +149,7 @@ export function App() {
         levels={levels}
         error={captureError}
         screen={screen}
+        watching={state.watchingScreen}
         suggestionsEnabled={state.settings.suggestionsEnabled}
         onSuggestionsChange={(value) =>
           send({
@@ -156,6 +166,7 @@ export function App() {
       {showSettings ? (
         <SettingsSheet
           settings={state.settings}
+          watchingActive={state.watchingScreen}
           agent={state.agent}
           repository={state.repository}
           hasRepository={state.hasRepository}
@@ -175,6 +186,8 @@ export function App() {
             agentFound={state.agent.found}
             agentTitle={state.agent.title}
             transcript={transcript}
+            replyingTo={replyingTo}
+            onReplyPending={setReplyingTo}
           />
           <Composer
             busy={busy}

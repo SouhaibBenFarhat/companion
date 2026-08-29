@@ -44,6 +44,17 @@ final class CallCapture {
     private var restartState = CaptureRestartPolicy.State()
     private let restartPolicy = CaptureRestartPolicy()
     private var settings = AwarenessSettings()
+    /// Consecutive dead-microphone rebuilds; see `restartIfMicrophoneDied`.
+    private var micRecoveryAttempts = 0
+    /// Whether the microphone actually came up on this graph.
+    ///
+    /// The health check must tell "started, then died" from "never started":
+    /// a session whose microphone failed at start runs tap-only on purpose,
+    /// and treating that as a death rebuilt the healthy tap in a loop until
+    /// the give-up path killed the whole session.
+    private var micStartedThisGraph = false
+    /// When the microphone came up, for the recovery counter's reset rule.
+    private var micStartedAt: TimeInterval = 0
     /// Which microphone to open. Empty means the system default.
     var preferredInputUID = ""
 
@@ -68,6 +79,7 @@ final class CallCapture {
         sessionOrigin = origin
         timeline = AudioTimeline(originHostTime: origin, clock: HostClock.current)
 
+        micStartedThisGraph = false
         if settings.captureMicrophone {
             do {
                 let chosen = AudioInputSelection.resolve(
@@ -75,10 +87,18 @@ final class CallCapture {
                     available: AudioDevices.inputs()
                 )
                 microphone?.onDegraded = { [weak self] message in self?.report(message) }
+                // Only an honoured preference is handed over. The resolver's
+                // fallback IS the system default, and passing it made the
+                // recorder bind what the engine would use anyway — the same
+                // outcome through a riskier door, and a "would not open"
+                // retry that rebuilt the identical configuration.
+                let preferred = chosen?.uid == preferredInputUID ? chosen : nil
                 try microphone?.start(
                     echoCancellation: settings.echoCancellationEnabled,
-                    device: chosen
+                    device: preferred
                 )
+                micStartedThisGraph = true
+                micStartedAt = Date().timeIntervalSinceReferenceDate
             } catch {
                 report(error.localizedDescription)
             }
@@ -114,10 +134,29 @@ final class CallCapture {
     /// - Parameter endingSession: false while rebuilding, which must keep the
     ///   clock it has been handing to the transcribers.
     func stop(endingSession: Bool = true) {
-        if endingSession { sessionOrigin = nil }
+        if endingSession {
+            sessionOrigin = nil
+            // The recovery budget belongs to the session, like the clock. A
+            // rebuild must not clear it — the recovery path rebuilds, and a
+            // per-rebuild reset would unbound the loop — but a count carried
+            // into the NEXT session stopped it at its first hiccup.
+            micRecoveryAttempts = 0
+        }
         guard isRunning || pump != nil else { return }
         pump?.cancel()
         pump = nil
+
+        // Read before the recorders are torn down — every start resets the
+        // rings, so this is the only moment the number exists. A non-zero
+        // count is audio that never reached a transcriber, and it was
+        // invisible until it was written down.
+        var dropped = microphone?.droppedFrames ?? 0
+        if #available(macOS 14.4, *), let recorder = currentTap {
+            dropped += recorder.droppedFrames
+        }
+        if dropped > 0 {
+            SessionLog.shared.write("capture", "dropped \(dropped) frames undelivered")
+        }
 
         microphone?.stop()
         if #available(macOS 14.4, *), let recorder = currentTap {
@@ -190,7 +229,20 @@ final class CallCapture {
         if levels.me > 0 || levels.them > 0 {
             restartPolicy.succeeded(at: Date().timeIntervalSinceReferenceDate, state: &restartState)
         }
-        DispatchQueue.main.async { [weak self] in self?.onLevels?(levels) }
+        DispatchQueue.main.async { [weak self] in
+            // Microphone audio flowing is what clears the dead-engine counter
+            // — on main, where the counter lives, and only after three
+            // seconds, the same rule `CaptureRestartPolicy.succeeded` applies
+            // to its own counter. A single tick is a trickle, and a trickle
+            // between two failures is not a recovery: a device that produced
+            // one chunk per rebuild would have cleared the bound every cycle
+            // and looped for the rest of the call.
+            if let self, levels.me > 0,
+               Date().timeIntervalSinceReferenceDate - self.micStartedAt >= 3 {
+                self.micRecoveryAttempts = 0
+            }
+            self?.onLevels?(levels)
+        }
     }
 
     private func deliver(_ chunk: PCMChunk) {
@@ -265,8 +317,17 @@ final class CallCapture {
             state: &restartState
         ) {
         case .ignore(let why):
-            // Not worth a line each time; this fires in bursts.
+            // Not worth a line each time; this fires in bursts. But one of
+            // these notifications is AVAudioEngineConfigurationChange, which
+            // arrives with the engine ALREADY stopped — and a stopped engine
+            // does not restart itself. The fingerprint compare cannot see
+            // that case: same devices, new configuration. So ignoring is only
+            // safe once the engine has been checked, delayed past the burst;
+            // on a healthy engine the check is a no-op.
             _ = why
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.restartIfMicrophoneDied()
+            }
 
         case .wait(let remaining):
             DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { [weak self] in
@@ -284,6 +345,34 @@ final class CallCapture {
             // and clearing the counter now would let a device that keeps
             // failing rebuild forever.
         }
+    }
+
+    /// The one case `CaptureRestartPolicy` cannot judge: the devices are
+    /// unchanged, but the microphone engine is dead.
+    ///
+    /// Without this, the tap keeps flowing and the user's own side is dead air
+    /// until some later device change — the worst kind of missing transcript,
+    /// because half the call still works and nothing looks wrong. The counter
+    /// is this path's own giveUp: it resets only when microphone audio
+    /// actually flows, not when the tap does, because tap audio is exactly
+    /// what masked the dead microphone in the first place.
+    private func restartIfMicrophoneDied() {
+        // `micStartedThisGraph` is the difference between "died" and "never
+        // came up". A microphone that failed at start left the session
+        // running tap-only on purpose, and rebuilding for it tears down the
+        // half that works.
+        guard isRunning, settings.captureMicrophone, micStartedThisGraph,
+              let microphone, !microphone.isEngineRunning else { return }
+        guard micRecoveryAttempts < 5 else {
+            report("The microphone keeps stopping. Listening has stopped.")
+            stop()
+            return
+        }
+        micRecoveryAttempts += 1
+        SessionLog.shared.write("capture", "microphone engine stopped; rebuilding")
+        let current = settings
+        stop(endingSession: false)
+        start(settings: current)
     }
 
     private func report(_ message: String) {

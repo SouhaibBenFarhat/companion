@@ -1,5 +1,5 @@
 import { send } from '../lib/bridge'
-import { Bar, Button, LiveDot, Meter, Toggle } from '../ui'
+import { Bar, Button, LiveDot, Meter, Toggle, cx } from '../ui'
 import type { Levels, ListeningState } from '../lib/types'
 
 export function AwarenessBar({
@@ -7,6 +7,7 @@ export function AwarenessBar({
   levels,
   error,
   screen,
+  watching,
   suggestionsEnabled,
   onSuggestionsChange,
 }: {
@@ -14,10 +15,41 @@ export function AwarenessBar({
   levels: Levels
   error: string
   screen: string
+  /** The standing screen watcher is on, independent of any call. */
+  watching: boolean
   suggestionsEnabled: boolean
   onSuggestionsChange: (value: boolean) => void
 }) {
-  if (!listening.active && !error) return null
+  if (!listening.active && !error && !(watching && screen)) return null
+
+  // Watching without listening earns one quiet line, not the whole bar: no
+  // meters, no speak-up — just what is being read, and a way to stop it from
+  // where it is announced. An error renders WITH the row, never instead of
+  // it: the row is the announcement that the screen is being read, and a
+  // stale error must not hide the announcement while the reading continues.
+  if (!listening.active) {
+    return (
+      <Bar edge="bottom">
+        <div className="px-3 py-1.5">
+          {error && <p className="text-xs leading-relaxed text-danger-text">{error}</p>}
+          {watching && screen && (
+            <div className={cx('flex items-center gap-2', error && 'mt-1')}>
+              <p className="min-w-0 flex-1 truncate text-xs text-muted" title={screen}>
+                Watching · {screen}
+              </p>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => send({ type: 'updateSettings', watchScreen: false })}
+              >
+                Stop
+              </Button>
+            </div>
+          )}
+        </div>
+      </Bar>
+    )
+  }
 
   return (
     // Capped and scrollable. Header plus this plus the composer used to add up

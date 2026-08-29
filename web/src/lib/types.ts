@@ -35,6 +35,8 @@ export interface SettingsPayload {
   microphoneDeviceUID: string
   /** Whether screen capture skips the panel. */
   hideFromScreenShare: boolean
+  /** Whether the screen is watched outside of a call, for typed questions. */
+  watchScreen: boolean
   /** The chosen microphone is not plugged in right now. */
   microphoneMissing: boolean
   /** 'system', 'light' or 'dark'. */
@@ -106,6 +108,9 @@ export interface StatePayload {
   /** False means no folder was chosen and the agent is running in $HOME. */
   hasRepository: boolean
   listening: ListeningState
+  /** The screen watcher is actually running — the setting can be on without
+      the Accessibility grant, and then this stays false. */
+  watchingScreen: boolean
   currentId: string
   conversations: ConversationSummary[]
   messages: Msg[]
@@ -131,12 +136,16 @@ export type Incoming =
 export type Outgoing =
   | { type: 'ready' }
   | { type: 'ask'; text: string }
+  /** Ask for an immediate answer to one spoken line, by its message id. */
+  | { type: 'replyToLine'; id: string }
   | { type: 'cancel' }
   | { type: 'hide' }
   | { type: 'newConversation' }
   | { type: 'selectConversation'; id: string }
   | { type: 'deleteConversation'; id: string }
   | { type: 'pickRepository' }
+  /** Save the current conversation to a file the user picks. */
+  | { type: 'exportConversation'; format: 'markdown' | 'json' }
   | { type: 'signIn' }
   | { type: 'dismissMessage'; id: string }
   | { type: 'openLink'; url: string }
@@ -157,6 +166,7 @@ export type Outgoing =
       suggestionsEnabled?: boolean
       microphoneDeviceUID?: string
       hideFromScreenShare?: boolean
+      watchScreen?: boolean
       theme?: string
       transcriptionEngine?: string
       persistTranscript?: boolean

@@ -132,6 +132,10 @@ final class PanelController: NSObject {
 
         awareness.updateRepository(settings.repositoryURL())
         awareness.preferredInputUID = settings.microphoneDeviceUID
+        // The standing screen watcher, independent of any call. Silently does
+        // nothing without the Accessibility grant — the settings sheet shows
+        // the missing permission right next to the switch.
+        if settings.watchScreen { awareness.setWatchingScreen(true) }
 
         awareness.onLevels = { [weak self] levels in
             // Its own message, never through `state` — the page resets the
@@ -608,6 +612,7 @@ final class PanelController: NSObject {
                 "persistTranscript": settings.awareness.persistTranscript,
                 "microphoneDeviceUID": settings.microphoneDeviceUID,
                 "hideFromScreenShare": settings.hideFromScreenShare,
+                "watchScreen": settings.watchScreen,
                 "theme": settings.theme.rawValue,
                 "transcriptionEngine": settings.transcriptionEngine.rawValue,
                 "hasRepository": settings.hasRepository,
@@ -628,6 +633,10 @@ final class PanelController: NSObject {
                 "active": awareness.isListening,
                 "callApp": awareness.callAppName ?? "",
             ],
+            // The watcher actually running — not the setting, which can be on
+            // while the Accessibility grant is missing. The page keys the
+            // watching row and the "not running yet" notice on this.
+            "watchingScreen": awareness.isWatchingScreen,
             "permissions": [
                 "canListen": permissions.canListen,
                 "canSeeScreen": permissions.canSeeScreen,
@@ -664,7 +673,14 @@ final class PanelController: NSObject {
 
     // MARK: - Asking
 
-    private func ask(_ text: String) {
+    /// - Parameters:
+    ///   - text: what appears as the user's bubble, and the question sent
+    ///     when the two are the same — which they are for anything typed.
+    ///   - wireQuestion: what the agent is asked instead, when they differ.
+    ///     A Reply tap shows a short question but sends the tapped line
+    ///     inside a delimiter block, because observed text is material for
+    ///     the agent to answer about, never part of the request itself.
+    private func ask(_ text: String, sending wireQuestion: String? = nil) {
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !runner.isRunning else { return }
 
@@ -693,7 +709,7 @@ final class PanelController: NSObject {
             screen += screen.isEmpty ? "" : "\n"
             screen += "Screenshot of the current window: \(shot.path)"
         }
-        let prompt = AwarenessPrompt.build(question: question, conversation: spoken, screen: screen)
+        let prompt = AwarenessPrompt.build(question: wireQuestion ?? question, conversation: spoken, screen: screen)
         if !spoken.isEmpty { awareness.markTranscriptSent() }
         // One question, one picture. Keeping it would silently attach a stale
         // screen to everything after it.
@@ -709,6 +725,10 @@ final class PanelController: NSObject {
                 repository: settings.repositoryURL(),
                 hasRepository: settings.hasRepository,
                 isListening: isListening,
+                // The watcher actually running, not the setting: a prompt that
+                // claims screen sight the grant does not allow is the same
+                // self-description failure in the other direction.
+                watchingScreen: awareness.isWatchingScreen,
                 watching: isListening ? AwarenessPrompt.watchingInstruction : "",
                 extra: settings.systemPrompt
             ),
@@ -793,6 +813,61 @@ final class PanelController: NSObject {
         pickRepository()
     }
 
+    /// Writes the current thread to a file the user picks.
+    ///
+    /// The formatting lives in `ConversationExport`, which scrubs credentials
+    /// the way the store does — this file is the one copy of a conversation
+    /// that leaves Companion's own folder.
+    private func exportConversation(as format: ConversationExport.Format) {
+        guard !current.messages.isEmpty else {
+            // The menu gates on the same fact, so reaching this is a bug on
+            // the page side — worth a line, not worth a dialog.
+            SessionLog.shared.write("panel", "export skipped, empty conversation")
+            return
+        }
+
+        // The reply still streaming is not a message yet — it joins the
+        // thread in finish(). An export taken mid-answer must still carry
+        // what the user can see on screen, marked for what it is.
+        var exported = current
+        let streamed = pendingAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if runner.isRunning, !streamed.isEmpty {
+            exported.append(Message(
+                role: .assistant,
+                text: streamed + "\n\n*(the answer was still arriving when this was exported)*"
+            ))
+        }
+
+        let save = NSSavePanel()
+        save.nameFieldStringValue = ConversationExport.fileName(for: exported, format: format)
+        save.canCreateDirectories = true
+
+        // The dialog is a normal window, so the app has to come forward for
+        // it — same as the repo picker.
+        NSApp.activate(ignoringOtherApps: true)
+        guard save.runModal() == .OK, let url = save.url else { return }
+
+        do {
+            switch format {
+            case .markdown:
+                try ConversationExport.markdown(exported).write(to: url, atomically: true, encoding: .utf8)
+            case .json:
+                try ConversationExport.json(exported).write(to: url, options: .atomic)
+            }
+            SessionLog.shared.write("panel", "exported conversation as \(format.rawValue)")
+        } catch {
+            // A user-initiated save that fails silently is the worst outcome:
+            // they picked a place, the dialog closed, and no file exists. The
+            // bar's error line is the one channel that cannot collide with a
+            // running answer.
+            SessionLog.shared.write("panel", "export failed: \(error.localizedDescription)")
+            send([
+                "type": "captureError",
+                "message": "Could not save the export: \(error.localizedDescription)",
+            ])
+        }
+    }
+
     private func pickRepository() {
         let open = NSOpenPanel()
         open.canChooseDirectories = true
@@ -828,6 +903,32 @@ extension PanelController: WKScriptMessageHandler {
 
         case "ask":
             ask(body["text"] as? String ?? "")
+
+        case "replyToLine":
+            // A tap on a spoken bubble. Routed through the ordinary question
+            // lane rather than the call brain: the user asked for this one, so
+            // it should stream, read the repo, and still work after listening
+            // has stopped. Only spoken lines qualify — a typed message or a
+            // note has no speaker to reply to.
+            guard let id = body["id"] as? String,
+                  let line = current.messages.first(where: { $0.id == id }),
+                  let speaker = line.role.speaker else { return }
+            // Scrubbed here because this is the one lane where a spoken line
+            // reaches the agent without passing through the transcript buffer,
+            // which only scrubs its own copy. A secret read out loud must not
+            // travel further than it already has.
+            let text = Redaction.scrub(line.text)
+            // Titled from the line, not the request. A reply-first thread
+            // would otherwise be labelled with the synthesized "Reply to…"
+            // boilerplate, and every such row in the history list would read
+            // the same.
+            if current.title.isEmpty {
+                current.title = Conversation.title(fromFirstMessage: text)
+            }
+            ask(
+                AwarenessPrompt.replyQuestion(speaker: speaker, text: text),
+                sending: AwarenessPrompt.replyPrompt(speaker: speaker, text: text)
+            )
 
         case "cancel":
             runner.cancel()
@@ -873,6 +974,11 @@ extension PanelController: WKScriptMessageHandler {
 
         case "pickRepository":
             pickRepository()
+
+        case "exportConversation":
+            guard let raw = body["format"] as? String,
+                  let format = ConversationExport.Format(rawValue: raw) else { return }
+            exportConversation(as: format)
 
         case "requestPermission":
             guard let raw = body["id"] as? String, let permission = Permission(rawValue: raw) else { return }
@@ -961,6 +1067,14 @@ extension PanelController: WKScriptMessageHandler {
                 settings.hideFromScreenShare = value
                 panel.isHiddenFromScreenShare = value
                 SessionLog.shared.write("panel", "hidden from screen share: \(value)")
+            }
+            if let value = body["watchScreen"] as? Bool, value != settings.watchScreen {
+                settings.watchScreen = value
+                // Live, not at the next launch — a watching switch that only
+                // takes effect later looks broken, and the mid-call version of
+                // that mistake has already been made once with Speak up.
+                awareness.setWatchingScreen(value)
+                SessionLog.shared.write("panel", "watch screen: \(value)")
             }
             AgentProbe.forget()
             persistSettings()

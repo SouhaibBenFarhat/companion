@@ -31,8 +31,15 @@ enum AudioDevices {
     /// to carry on with the system default rather than fail: a microphone that
     /// cannot be selected is a worse outcome than the wrong microphone, and
     /// retrying it forever is worse than both.
+    /// - Parameter element: which element of the input node's audio unit the
+    ///   device is set on. 0 — the whole unit — for a plain capture unit. 1 —
+    ///   the input element — when voice processing is on: that unit carries
+    ///   both directions, and a device set at element 0 reaches its output
+    ///   half too, which then has to play through a capture-only device. The
+    ///   engine either refuses to start (-10875) or starts with a tap that
+    ///   never fires, and nothing names the cause in either case.
     @discardableResult
-    static func use(_ device: AudioInputDevice, on engine: AVAudioEngine) -> Bool {
+    static func use(_ device: AudioInputDevice, on engine: AVAudioEngine, element: AudioUnitElement = 0) -> Bool {
         guard let id = deviceID(forUID: device.uid), let unit = engine.inputNode.audioUnit else {
             return false
         }
@@ -53,7 +60,7 @@ enum AudioDevices {
             unit,
             kAudioOutputUnitProperty_CurrentDevice,
             kAudioUnitScope_Global,
-            0,
+            element,
             &deviceID,
             UInt32(MemoryLayout<AudioDeviceID>.size)
         )

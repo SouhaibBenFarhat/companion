@@ -33,6 +33,7 @@ export function Header({
   hasRepository,
   conversations,
   currentId,
+  canExport,
   historyOpen,
   settingsOpen,
   onChat,
@@ -43,6 +44,8 @@ export function Header({
   hasRepository: boolean
   conversations: ConversationSummary[]
   currentId: string
+  /** The current thread has messages — the thing export actually requires. */
+  canExport: boolean
   historyOpen: boolean
   settingsOpen: boolean
   onChat: () => void
@@ -100,6 +103,7 @@ export function Header({
             onOpenChange={onHistoryOpenChange}
             conversations={conversations}
             currentId={currentId}
+            canExport={canExport}
             trigger={
               // Opens the menu on press, so it is the one control in the
               // strip that must not also grab the window.

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { DropdownMenu } from 'radix-ui'
 import { CheckIcon, DeleteIcon } from './icons'
 import { IconButton } from './IconButton'
+import { cx } from './variants'
 
 /**
  * A dropdown menu.
@@ -36,12 +37,18 @@ export function Menu({
   trigger,
   children,
   align = 'start',
+  width = 'menu',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   trigger: React.ReactNode
   children: React.ReactNode
   align?: 'start' | 'center' | 'end'
+  /**
+   * 'menu' is the standard list width. 'fit' hugs the items — for a menu of
+   * one or two short actions, where the standard width reads as an empty tray.
+   */
+  width?: 'menu' | 'fit'
 }) {
   useCloseOnBlur(open, () => onOpenChange(false))
 
@@ -83,7 +90,10 @@ export function Menu({
             zIndex: 'var(--z-float)' as unknown as number,
             maxHeight: 'var(--radix-dropdown-menu-content-available-height)',
           }}
-          className="min-w-[var(--menu-w)] overflow-y-auto rounded-lg border border-line-strong p-1"
+          className={cx(
+            'overflow-y-auto rounded-lg border border-line-strong p-1',
+            width === 'menu' && 'min-w-[var(--menu-w)]',
+          )}
         >
           {children}
         </DropdownMenu.Content>
@@ -102,6 +112,7 @@ export function MenuItem({
   detail,
   trailing,
   tone = 'neutral',
+  centered = false,
 }: {
   onSelect: () => void
   /**
@@ -118,6 +129,12 @@ export function MenuItem({
   detail?: string
   trailing?: React.ReactNode
   tone?: 'neutral' | 'danger'
+  /**
+   * For a plain action row in a short menu. Drops the tick column — which
+   * exists so selectable lists align, and in a menu with nothing selectable
+   * only pushes the label off centre — and centres the label instead.
+   */
+  centered?: boolean
 }) {
   return (
     <DropdownMenu.Item
@@ -129,11 +146,16 @@ export function MenuItem({
         event.preventDefault()
         onDelete()
       }}
-      className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left outline-none"
+      className={cx(
+        'flex w-full items-start gap-2 rounded-md px-2 py-1.5 outline-none',
+        centered ? 'justify-center text-center' : 'text-left',
+      )}
     >
-      <span className="mt-0.5 w-3 shrink-0">
-        {selected ? <CheckIcon size={12} strokeWidth={2.5} className="text-accent-text" /> : icon}
-      </span>
+      {!centered && (
+        <span className="mt-0.5 w-3 shrink-0">
+          {selected ? <CheckIcon size={12} strokeWidth={2.5} className="text-accent-text" /> : icon}
+        </span>
+      )}
 
       <span className="min-w-0 flex-1">
         <span className={`block text-sm font-medium ${tone === 'danger' ? 'text-danger-text' : 'text-ink'}`}>

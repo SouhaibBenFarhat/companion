@@ -99,6 +99,30 @@ final class AgentContextTests: XCTestCase {
         XCTAssertFalse(prompt.contains("Listening is OFF"))
     }
 
+    /// The standing watcher sends a <screen> block with no call running. A
+    /// prompt that said "you can only see what the user types" arrived in the
+    /// same request — and an agent just told it cannot see the screen does not
+    /// trust the screen it was handed.
+    func testWatchingWithoutListeningIsItsOwnState() {
+        let prompt = AgentContext.systemPrompt(
+            repository: repo, hasRepository: true, isListening: false, watchingScreen: true
+        )
+        XCTAssertTrue(prompt.contains("Listening is OFF"))
+        XCTAssertTrue(prompt.contains("the screen is being watched"))
+        XCTAssertTrue(prompt.contains("never as an"))
+        XCTAssertFalse(prompt.contains("only see what the user types"))
+    }
+
+    /// Listening already brings the screen with it; the watching flag must not
+    /// add a second, competing description.
+    func testListeningWinsOverTheWatchingFlag() {
+        let prompt = AgentContext.systemPrompt(
+            repository: repo, hasRepository: true, isListening: true, watchingScreen: true
+        )
+        XCTAssertTrue(prompt.contains("Listening is ON"))
+        XCTAssertFalse(prompt.contains("the screen is being watched"))
+    }
+
     /// Local capture is a selling point and a promise; it has to be stated.
     func testSaysNothingIsUploaded() {
         let prompt = AgentContext.systemPrompt(repository: repo, hasRepository: true)

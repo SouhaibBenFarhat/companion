@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { send } from '../lib/bridge'
 import {
   Button,
@@ -42,6 +42,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
  */
 export function SettingsSheet({
   settings,
+  watchingActive,
   agent,
   repository,
   hasRepository,
@@ -50,6 +51,8 @@ export function SettingsSheet({
   onClose,
 }: {
   settings: SettingsPayload
+  /** The screen watcher is actually running, not merely switched on. */
+  watchingActive: boolean
   agent: AgentInfo
   repository: string
   hasRepository: boolean
@@ -58,6 +61,20 @@ export function SettingsSheet({
   onClose: () => void
 }) {
   const [draft, setDraft] = useState(settings)
+
+  // The draft is copied once at mount, and the sheet can stay open while the
+  // bars change these two booleans underneath it — Stop on the watching row,
+  // Speak up on the listening bar. Without the resync, the next apply() sent
+  // the stale copy back and silently switched watching on again seconds after
+  // the user had stopped it. Only the toggles resync: text fields must not be
+  // rewritten under a typing user by a round-trip.
+  useEffect(() => {
+    setDraft((current) => ({
+      ...current,
+      watchScreen: settings.watchScreen,
+      suggestionsEnabled: settings.suggestionsEnabled,
+    }))
+  }, [settings.watchScreen, settings.suggestionsEnabled])
 
   const apply = (patch: Partial<SettingsPayload>) => {
     const next = { ...draft, ...patch }
@@ -71,6 +88,7 @@ export function SettingsSheet({
       suggestionsEnabled: next.suggestionsEnabled,
       microphoneDeviceUID: next.microphoneDeviceUID,
       hideFromScreenShare: next.hideFromScreenShare,
+      watchScreen: next.watchScreen,
       theme: next.theme,
       transcriptionEngine: next.transcriptionEngine,
       persistTranscript: next.persistTranscript,
@@ -201,6 +219,23 @@ export function SettingsSheet({
           checked={draft.suggestionsEnabled}
           onChange={(value) => apply({ suggestionsEnabled: value })}
         />
+
+        <Toggle
+          label="Watch the screen"
+          hint="The app, window, file and visible code travel with every typed question, so answers can be about what is actually in front of you. Reads text through Accessibility — never a picture — and only from editors and terminals. While listening to a call the screen is watched regardless; this keeps it on in between."
+          checked={draft.watchScreen}
+          onChange={(value) => apply({ watchScreen: value })}
+        />
+        {draft.watchScreen && !watchingActive && (
+          // Keyed on the watcher actually running, not on the live permission
+          // read: the read flips true the moment the grant is made, while the
+          // watcher stays down until relaunch — and this notice is the only
+          // place that says so.
+          <Notice tone="danger">
+            Watching is not running. It needs the Accessibility permission below — and macOS only
+            honours the grant at launch, so after granting, quit and reopen.
+          </Notice>
+        )}
       </Group>
 
       <Group title="Appearance">

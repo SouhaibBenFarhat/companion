@@ -33,10 +33,18 @@ final class WhisperEngine: TranscriptionEngine {
     private var windowState = TranscriptionWindower.State()
 
     /// True once the model is loaded. Audio arriving before then is still
-    /// windowed and still decoded when it lands — the first download takes
-    /// minutes, and dropping the opening sentence of a call is worse than a
-    /// late one.
+    /// windowed, and a window that closes early waits in `pendingWindows` —
+    /// the first load takes seconds, a first download takes minutes, and
+    /// dropping the opening sentence of a call is worse than a late one.
     private var isLoaded = false
+    /// Closed windows waiting for the model.
+    ///
+    /// A closed window is the only copy of its audio — the windower has
+    /// already cleared its samples — so a load-time guard that dropped these
+    /// silently cost the opening words of every session. Bounded; the oldest
+    /// go first, because the newest are the ones still on screen as a live
+    /// line.
+    private var pendingWindows: [TranscriptionWindow] = []
     /// One preview decode at a time. A second queued behind the first is stale
     /// before it starts.
     private var previewInFlight = false
@@ -88,7 +96,22 @@ final class WhisperEngine: TranscriptionEngine {
             try await pipeline.load(folder: folder, language: language)
             await pipeline.setVocabulary(vocabulary)
             let tokens = await pipeline.vocabularyTokenCount
-            await MainActor.run { self.isLoaded = true }
+            // What closed while the model was loading decodes now — one at a
+            // time, in the order it was said. Spawning a Task per window let
+            // the scheduler pick the order, and actors promise no first-in
+            // first-out fairness; a reordered pair emitted the call's opening
+            // lines backwards. Previews are held off until the backlog is
+            // done, or a live preview interleaving between two queued closed
+            // reports re-settles words that were already emitted.
+            let queued = await MainActor.run { () -> [TranscriptionWindow] in
+                self.isLoaded = true
+                self.previewInFlight = true
+                let queued = self.pendingWindows
+                self.pendingWindows = []
+                return queued
+            }
+            for window in queued { await decodeNow(window) }
+            await MainActor.run { self.previewInFlight = false }
             SessionLog.shared.write(
                 "whisper",
                 "\(speaker) ready: \(variant.rawValue), \(language), \(tokens) vocabulary tokens"
@@ -107,15 +130,49 @@ final class WhisperEngine: TranscriptionEngine {
             let open = self.isLoaded ? self.windower.flush(&self.windowState) : nil
             self.isLoaded = false
             self.previewInFlight = false
+            self.pendingWindows = []
             self.converter = nil
             self.converterSource = nil
             return open
         }
-        if let pending, let text = try? await pipeline.decode(pending.samples),
-           !TranscriptionNoise.isFiller(text) {
-            await MainActor.run { self.onFinal?(text, pending.startSeconds) }
+        let decoded: String
+        if let pending {
+            decoded = (try? await pipeline.decode(pending.samples)) ?? ""
+        } else {
+            decoded = ""
         }
-        await MainActor.run { self.windowState = TranscriptionWindower.State() }
+
+        // The settled buffer is read and cleared only now, after the decode: a
+        // preview already on the pipeline's queue lands its words in
+        // `sentenceBuffer` between the flush above and this block, and reading
+        // earlier lost them. Emitting through `agreement.finish` is also what
+        // stops the flushed decode repeating sentences that settled mid-window
+        // — finish returns only the words not yet committed.
+        await MainActor.run {
+            var text = decoded
+            // The fresh decode gets the same judgement report() applies. The
+            // buffer does not — its words passed these filters as previews.
+            if TranscriptionNoise.isForeignScript(text, expecting: self.language) { text = "" }
+            if TranscriptionNoise.isRepetitionLoop(text) {
+                text = TranscriptionNoise.withoutRepetitionTail(text) ?? ""
+            }
+            if TranscriptionNoise.isFiller(text) { text = "" }
+
+            let at = max(self.pendingStart, pending?.startSeconds ?? self.pendingStart)
+            let rest = [self.sentenceBuffer, self.agreement.finish(text)]
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            self.sentenceBuffer = ""
+            self.pendingStart = 0
+
+            if !rest.isEmpty {
+                let sentences = SentenceSplitter.split(rest)
+                let times = SentenceSplitter.times(for: sentences, from: at, over: pending?.duration ?? 0)
+                for (sentence, time) in zip(sentences, times) { self.onFinal?(sentence, time) }
+            }
+            self.onVolatile?("", at)
+            self.windowState = TranscriptionWindower.State()
+        }
         await pipeline.unload()
     }
 
@@ -196,25 +253,40 @@ final class WhisperEngine: TranscriptionEngine {
     private func decode(_ window: TranscriptionWindow) {
         guard isLoaded else {
             previewInFlight = false
+            // A dropped preview costs nothing — its window is still open and
+            // will be decoded again. A dropped closed window is speech gone.
+            if window.isClosed {
+                pendingWindows.append(window)
+                if pendingWindows.count > 8 { pendingWindows.removeFirst() }
+            }
             return
         }
         // `self` is captured strongly on purpose: the task is short, and a
         // window that has been cut out of the audio should still reach the
         // transcript even if the coordinator is tearing the engine down.
-        Task { [pipeline] in
-            do {
-                let text = try await pipeline.decode(window.samples)
-                await self.report(text: text, for: window)
-            } catch {
-                let message = error.localizedDescription
-                SessionLog.shared.write("whisper", "decode failed: \(message)")
-                await self.report(failure: message, for: window)
-            }
+        Task { await self.decodeNow(window) }
+    }
+
+    /// One decode, reported. The pending-window drain awaits these in order;
+    /// live windows go through `decode`, which wraps this in a task.
+    private func decodeNow(_ window: TranscriptionWindow) async {
+        do {
+            let text = try await pipeline.decode(window.samples)
+            await report(text: text, for: window)
+        } catch {
+            let message = error.localizedDescription
+            SessionLog.shared.write("whisper", "decode failed: \(message)")
+            await report(failure: message, for: window)
         }
     }
 
     @MainActor
     private func report(text: String, for window: TranscriptionWindow) {
+        // A decode that lands after stop() must land nowhere. stop() clears
+        // the live line and resets the agreement; a preview that was already
+        // on the pipeline's queue would otherwise resurrect its dead window's
+        // text as a ghost live line that nothing ever clears again.
+        guard isLoaded else { return }
         if !window.isClosed { previewInFlight = false }
 
         // Cut at the loop, keep what came before it.
@@ -229,13 +301,14 @@ final class WhisperEngine: TranscriptionEngine {
             // Whisper is told the language and still returns the odd line in
             // another one, on a window it could not make sense of.
             SessionLog.shared.write("whisper", "\(speaker) dropped a line in another script")
+            if window.isClosed { flushDiscardedWindow(window) }
             return
         }
 
         if TranscriptionNoise.isRepetitionLoop(text) {
             guard let kept = TranscriptionNoise.withoutRepetitionTail(text) else {
                 SessionLog.shared.write("whisper", "\(speaker) dropped, loop with nothing before it")
-                if window.isClosed { onVolatile?("", window.startSeconds) }
+                if window.isClosed { flushDiscardedWindow(window) }
                 return
             }
             SessionLog.shared.write(
@@ -250,12 +323,16 @@ final class WhisperEngine: TranscriptionEngine {
             // Both are non-empty, so `TranscriptBuffer.appendFinal`'s empty
             // check lets them through, they count as a settled line, and they
             // can trip the suggestion trigger into interrupting a call about
-            // nothing. Clearing the tail as well removes a preview that is
-            // about to have no final to replace it.
-            // Only on a closed window. Clearing the preview on an open one
-            // deletes a line the reader is part-way through, and the next pass
-            // brings it straight back — which is the flicker.
-            if window.isClosed { onVolatile?("", window.startSeconds) }
+            // nothing.
+            // Only on a closed window. Clearing state on an open one deletes a
+            // line the reader is part-way through, and the next pass brings it
+            // straight back — which is the flicker. This branch was also the
+            // one silent drop in the file: a real one-word answer — "Okay." is
+            // in the filler set — vanished with nothing in the log.
+            if window.isClosed {
+                SessionLog.shared.write("whisper", "\(speaker) dropped a filler line, \(text.count) chars")
+                flushDiscardedWindow(window)
+            }
             return
         }
 
@@ -322,7 +399,38 @@ final class WhisperEngine: TranscriptionEngine {
 
     @MainActor
     private func report(failure message: String, for window: TranscriptionWindow) {
+        guard isLoaded else { return }
         if !window.isClosed { previewInFlight = false }
         onError?("Transcription failed: \(message)")
+    }
+
+    /// A closed window's decode was judged garbage and thrown away.
+    ///
+    /// The window's audio is gone either way — but two things must not go with
+    /// it. The words earlier previews already settled are real speech and are
+    /// emitted; and the agreement state is reset, because `committed` words
+    /// from a discarded window make `offer` skip that many words of the NEXT
+    /// window's text — one hallucinated window used to eat the start of the
+    /// sentence after it, and the stale live line stayed on screen on top.
+    @MainActor
+    private func flushDiscardedWindow(_ window: TranscriptionWindow) {
+        // Before the resets — the reversed order always yields the window
+        // start and mid-window sentences lose their place.
+        let at = max(pendingStart, window.startSeconds)
+        let rest = sentenceBuffer
+        sentenceBuffer = ""
+        pendingStart = 0
+        agreement.reset()
+
+        if !rest.isEmpty {
+            // Only the buffer, never the dropped text: the buffer's words
+            // passed the filters as previews; the dropped text did not, and
+            // emitting any of it would hand a hallucination to the suggestion
+            // trigger.
+            let sentences = SentenceSplitter.split(rest)
+            let times = SentenceSplitter.times(for: sentences, from: at, over: window.duration)
+            for (sentence, time) in zip(sentences, times) { onFinal?(sentence, time) }
+        }
+        onVolatile?("", window.startSeconds)
     }
 }
